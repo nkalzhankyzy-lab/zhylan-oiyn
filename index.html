@@ -137,6 +137,20 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
 @keyframes wiggle{0%,100%{transform:rotate(-4deg) scale(1)}50%{transform:rotate(4deg) scale(1.06)}}
 @keyframes bob{50%{transform:translateY(-8px)}}
 @media (prefers-reduced-motion:reduce){.winmodal,.winpic,.crown{animation:none}}
+.talk{width:100%;font-size:18px;padding:14px;border-radius:14px;background:#fff7d1;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none;
+  display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 5px 0 var(--line)}
+.talk.rec{background:var(--accent);color:#fff;transform:translateY(3px);box-shadow:0 2px 0 var(--line);animation:recpulse 1s ease-in-out infinite}
+@keyframes recpulse{50%{box-shadow:0 2px 0 var(--line),0 0 0 8px rgba(229,57,53,.25)}}
+.talk .sec{font-variant-numeric:tabular-nums}
+.vmsg{display:flex;align-items:center;gap:8px}
+.vplay{width:38px;height:38px;border-radius:50%;padding:0;font-size:16px;flex:none;display:grid;place-items:center}
+.vbar{flex:1;min-width:60px;height:6px;border-radius:3px;background:#cfd8e0;overflow:hidden}
+.vbar b{display:block;height:100%;width:0;background:var(--accent)}
+.vdur{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.msg.playing{outline:3px solid var(--accent)}
+.speaking{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:26;background:var(--accent);color:#fff;
+  border:2px solid var(--line);border-radius:999px;padding:8px 16px;font-size:16px;box-shadow:0 4px 0 rgba(0,0,0,.2);max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion:reduce){.talk.rec{animation:none}}
 @media (prefers-reduced-motion:reduce){.tok,.tok.slide,.tok .lifter,.tok .shadow{transition:none}.dice.mine,.dice.rolling svg{animation:none}}
 </style>
 </head>
@@ -169,6 +183,7 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
     <section class="card chat">
       <h3 class="cardtitle">Чат</h3>
       <div class="msgs" id="msgs"><div class="msg sys">Осында бір-біріңізге жаза аласыз</div></div>
+      <button class="talk" id="talkBtn" type="button"><span>🎙</span><span id="talkLabel">Басып тұрып сөйлеңіз</span></button>
       <div class="quick" id="quick"></div>
       <form class="chatform" id="chatForm"><input type="text" id="chatInput" maxlength="300" placeholder="Хабарлама..." autocomplete="off"><button class="btn-red" type="submit">Жіберу</button></form>
     </section>
@@ -188,6 +203,7 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
 </div>
 
 <input type="file" id="photoInput" accept="image/*" hidden>
+<div class="speaking" id="speaking" hidden></div>
 <div class="overlay celebrate" id="winOverlay" hidden>
   <canvas id="confetti"></canvas>
   <div class="modal winmodal">
@@ -698,13 +714,121 @@ $("copyBtn2").addEventListener("click", copyLink);
 const QUICK = ["👏 Жарайсың!","😂","Кезегің!","Ой, жылан!","🐍","🪜","Сәлем!"];
 for (const q of QUICK){ const b=document.createElement("button"); b.type="button"; b.className="btn-small"; b.textContent=q; b.onclick=()=>say(q); $("quick").appendChild(b); }
 const seenMsg = new Set();
-function addMsg(m){
+function addMsg(m, live){
   if (seenMsg.has(m.id)) return; seenMsg.add(m.id);
   const box = $("msgs"); const d = document.createElement("div"); d.className = "msg" + (m.pid===PID?" me":"");
   const f = document.createElement("span"); f.className="from"; f.textContent = m.name;
   const p = playerById(m.pid); if (p) f.style.color = PCOLORS[p.color%8];
-  d.append(f, document.createTextNode(m.body)); box.appendChild(d); box.scrollTop = box.scrollHeight;
+  if (m.voice_id){
+    const row = document.createElement("div"); row.className = "vmsg";
+    const b = document.createElement("button"); b.type = "button"; b.className = "vplay btn-red"; b.textContent = "▶"; b.setAttribute("aria-label","Тыңдау");
+    const bar = document.createElement("div"); bar.className = "vbar"; bar.appendChild(document.createElement("b"));
+    const du = document.createElement("span"); du.className = "vdur"; du.textContent = fmtSec(m.dur||0);
+    row.append(b, bar, du); d.append(f, row);
+    const item = {id:m.voice_id, name:m.name, el:d, btn:b, bar:bar.firstChild};
+    b.onclick = ()=>{ audio(); if (curVoice && curVoice.item===item){ stopVoice(); } else { voiceQueue.length = 0; stopVoice(); playVoice(item); } };
+    if (live && m.pid !== PID) enqueueVoice(item);
+  } else d.append(f, document.createTextNode(m.body));
+  box.appendChild(d);
+  const all = box.querySelectorAll(".msg:not(.sys)");   // соңғы 50 хабар ғана
+  for (let i=0; i<all.length-50; i++){ if (curVoice && curVoice.item.el===all[i]) stopVoice(); all[i].remove(); }
+  box.scrollTop = box.scrollHeight;
 }
+function fmtSec(x){ x = Math.max(0, Math.round(x)); return Math.floor(x/60) + ":" + String(x%60).padStart(2,"0"); }
+
+/* ---------- рация: дауыстық хабар ---------- */
+const voiceCache = {}, voiceQueue = []; let curVoice = null;
+async function voiceUrl(id){
+  if (voiceCache[id]) return voiceCache[id];
+  const {data, error} = await sb.from("zhl_voice").select("audio").eq("id", id).single();
+  if (error || !data) throw error || new Error("no audio");
+  return (voiceCache[id] = data.audio);
+}
+function enqueueVoice(item){ voiceQueue.push(item); if (!curVoice) nextVoice(); }
+function nextVoice(){ const it = voiceQueue.shift(); if (it) playVoice(it); }
+function stopVoice(){
+  if (!curVoice) return; const {a, item} = curVoice; curVoice = null;
+  try{ a.pause(); }catch(e){} item.btn.textContent = "▶"; item.el.classList.remove("playing"); item.bar.style.width = "0";
+  $("speaking").hidden = true;
+}
+async function playVoice(item){
+  try{
+    const a = new Audio(await voiceUrl(item.id)); curVoice = {a, item};
+    item.btn.textContent = "■"; item.el.classList.add("playing");
+    $("speaking").textContent = `🔊 ${item.name} сөйлеп жатыр...`; $("speaking").hidden = false;
+    a.ontimeupdate = ()=>{ if (a.duration && isFinite(a.duration)) item.bar.style.width = (100*a.currentTime/a.duration) + "%"; };
+    a.onended = ()=>{ stopVoice(); nextVoice(); };
+    a.onerror = ()=>{ stopVoice(); nextVoice(); };
+    await a.play();
+  }catch(e){
+    // браузер дыбысты өзі ойнатуға рұқсат бермесе — батырманы басып тыңдайды
+    if (curVoice && curVoice.item === item) stopVoice();
+    item.btn.textContent = "▶";
+    if (String(e && e.name) === "NotAllowedError") toast(`${item.name} дауыстық хабар жіберді — ▶ басып тыңдаңыз`);
+    nextVoice();
+  }
+}
+
+let rec = null, recStream = null, recChunks = [], recStart = 0, recTimer = null, recToggle = false, pressAt = 0;
+function recMime(){
+  if (!window.MediaRecorder) return null;
+  for (const t of ["audio/webm;codecs=opus","audio/mp4","audio/ogg;codecs=opus","audio/webm"]) if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+  return "";
+}
+async function startRec(){
+  if (rec) return;
+  if (!joined){ toast("Алдымен ойынға қосылыңыз"); $("joinOverlay").hidden = false; return; }
+  const mt = recMime(); if (mt === null){ toast("Бұл браузер дауыс жазуды қолдамайды"); return; }
+  audio(); stopVoice();
+  try{ recStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}}); }
+  catch(e){ toast("Микрофонға рұқсат беріңіз (браузердің мекенжай жолағындағы 🔒 белгісі)"); return; }
+  recChunks = [];
+  try{ rec = new MediaRecorder(recStream, mt ? {mimeType:mt, audioBitsPerSecond:32000} : {audioBitsPerSecond:32000}); }
+  catch(e){ rec = new MediaRecorder(recStream); }
+  rec.ondataavailable = e=>{ if (e.data && e.data.size) recChunks.push(e.data); };
+  rec.onstop = sendRec;
+  rec.start(250); recStart = Date.now();
+  $("talkBtn").classList.add("rec"); knock(AC ? AC.currentTime : 0, .4, 2000);
+  const upd = ()=>{ const sec = (Date.now()-recStart)/1000;
+    $("talkLabel").innerHTML = ""; $("talkLabel").append("Жазып жатыр ", Object.assign(document.createElement("span"),{className:"sec",textContent:fmtSec(sec)}), recToggle ? " · жіберу үшін басыңыз" : " · жіберу үшін жіберіңіз");
+    if (sec >= 30) stopRec(); };
+  upd(); recTimer = setInterval(upd, 250);
+}
+function stopRec(cancel){
+  if (!rec) return; clearInterval(recTimer);
+  rec.cancelled = !!cancel; try{ rec.stop(); }catch(e){}
+  if (recStream) recStream.getTracks().forEach(t=>t.stop());
+  $("talkBtn").classList.remove("rec"); $("talkLabel").textContent = "Басып тұрып сөйлеңіз"; recToggle = false;
+}
+async function sendRec(){
+  const r = rec; rec = null; recStream = null;
+  const dur = (Date.now()-recStart)/1000;
+  if (r.cancelled) return;
+  if (dur < 0.7 || !recChunks.length){ toast("Тым қысқа. Батырманы басып тұрып сөйлеңіз"); return; }
+  const blob = new Blob(recChunks, {type: r.mimeType || (recChunks[0] && recChunks[0].type) || "audio/webm"});
+  const url = await new Promise(res=>{ const fr = new FileReader(); fr.onload = ()=>res(fr.result); fr.readAsDataURL(blob); });
+  if (url.length >= 400000){ toast("Хабар тым ұзақ болды"); return; }
+  const clean = url.replace(/^data:audio\/([^;,]+)[^,]*?;base64,/, (m0, sub)=>"data:audio/"+sub+";base64,");
+  $("talkLabel").textContent = "Жіберілуде...";
+  try{ const {error} = await sb.rpc("zhl_voice_say",{p_code:ROOM,p_pid:PID,p_audio:clean,p_dur:dur}); if (error) throw error; toast("🎙 Жіберілді"); }
+  catch(e){ toast("Дауыстық хабар жіберілмеді, қайталап көріңіз"); }
+  $("talkLabel").textContent = "Басып тұрып сөйлеңіз";
+}
+// басып тұрып сөйлеу; қысқа бассаңыз — бір басқанда жазу, тағы басқанда жіберу
+const tb = $("talkBtn");
+tb.addEventListener("contextmenu", e=>e.preventDefault());
+tb.addEventListener("pointerdown", async e=>{
+  e.preventDefault(); try{ tb.setPointerCapture(e.pointerId); }catch(_){}
+  if (rec && recToggle){ stopRec(); return; }
+  pressAt = Date.now(); await startRec();
+});
+tb.addEventListener("pointerup", ()=>{
+  if (!rec || recToggle) return;
+  if (Date.now() - pressAt < 400){ recToggle = true; return; }   // жай басу: жазу жалғасады
+  stopRec();
+});
+tb.addEventListener("pointercancel", ()=>{ if (rec && !recToggle) stopRec(); });
+tb.addEventListener("keydown", e=>{ if ((e.key===" "||e.key==="Enter") && !e.repeat){ e.preventDefault(); if (rec){ stopRec(); } else { recToggle = true; startRec(); } } });
 async function say(text){
   text = (text||"").trim(); if (!text) return;
   if (!joined){ toast("Алдымен ойынға қосылыңыз"); $("joinOverlay").hidden=false; return; }
@@ -715,7 +839,7 @@ $("chatForm").addEventListener("submit", e=>{ e.preventDefault(); const v=$("cha
 /* ---------- нақты уақыт ---------- */
 const ch = sb.channel("zhl:"+ROOM, {config:{presence:{key:PID}}});
 ch.on("postgres_changes",{event:"*",schema:"public",table:"zhl_rooms",filter:"code=eq."+ROOM}, pl=>{ if (pl.new && pl.new.state) applyState(pl.new.state); })
-  .on("postgres_changes",{event:"INSERT",schema:"public",table:"zhl_chat",filter:"room=eq."+ROOM}, pl=>addMsg(pl.new))
+  .on("postgres_changes",{event:"INSERT",schema:"public",table:"zhl_chat",filter:"room=eq."+ROOM}, pl=>addMsg(pl.new, true))
   .on("postgres_changes",{event:"*",schema:"public",table:"zhl_avatars",filter:"room=eq."+ROOM}, pl=>{ if (pl.new && pl.new.pid){ photos[pl.new.pid] = pl.new.img; if (!animating) render(); } })
   .on("presence",{event:"sync"}, ()=>{ online = new Set(Object.keys(ch.presenceState())); setTimeout(()=>{ presenceSynced = true; }, 1500); if (!animating) render(); })
   .subscribe(st=>{ if (st==="SUBSCRIBED"){ track(); refresh(); } });
@@ -736,7 +860,7 @@ async function boot(){
   await loadPhotos();
   await refresh();
   const {data:msgs} = await sb.from("zhl_chat").select("*").eq("room",ROOM).order("id",{ascending:false}).limit(50);
-  (msgs||[]).reverse().forEach(addMsg);
+  (msgs||[]).reverse().forEach(m=>addMsg(m, false));
   await queue;
   const savedName = store.get("zhl_name");
   if (!playerById(PID)){
