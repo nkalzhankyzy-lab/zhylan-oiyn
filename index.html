@@ -142,6 +142,9 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
 .talk.rec{background:var(--accent);color:#fff;transform:translateY(3px);box-shadow:0 2px 0 var(--line);animation:recpulse 1s ease-in-out infinite}
 @keyframes recpulse{50%{box-shadow:0 2px 0 var(--line),0 0 0 8px rgba(229,57,53,.25)}}
 .talk .sec{font-variant-numeric:tabular-nums}
+.talk{position:relative;overflow:hidden}
+.talk .lvl{position:absolute;left:0;bottom:0;height:7px;width:0;background:#fdd835;transition:width .08s}
+.talk:not(.rec) .lvl{width:0!important}
 .vmsg{display:flex;align-items:center;gap:8px}
 .vplay{width:38px;height:38px;border-radius:50%;padding:0;font-size:16px;flex:none;display:grid;place-items:center}
 .vbar{flex:1;min-width:60px;height:6px;border-radius:3px;background:#cfd8e0;overflow:hidden}
@@ -183,7 +186,7 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
     <section class="card chat">
       <h3 class="cardtitle">Чат</h3>
       <div class="msgs" id="msgs"><div class="msg sys">Осында бір-біріңізге жаза аласыз</div></div>
-      <button class="talk" id="talkBtn" type="button"><span>🎙</span><span id="talkLabel">Басып тұрып сөйлеңіз</span></button>
+      <button class="talk" id="talkBtn" type="button"><span>🎙</span><span id="talkLabel">Басып тұрып сөйлеңіз</span><span class="lvl" id="talkLvl"></span></button>
       <div class="quick" id="quick"></div>
       <form class="chatform" id="chatForm"><input type="text" id="chatInput" maxlength="300" placeholder="Хабарлама..." autocomplete="off"><button class="btn-red" type="submit">Жіберу</button></form>
     </section>
@@ -727,7 +730,7 @@ function addMsg(m, live){
     row.append(b, bar, du); d.append(f, row);
     const item = {id:m.voice_id, name:m.name, el:d, btn:b, bar:bar.firstChild};
     b.onclick = ()=>{ audio(); if (curVoice && curVoice.item===item){ stopVoice(); } else { voiceQueue.length = 0; stopVoice(); playVoice(item); } };
-    if (live && m.pid !== PID) enqueueVoice(item);
+    if (live && !(m.pid === PID && sendingVoice)) enqueueVoice(item);   // осы қойындының өзі жібергенін ғана ойнатпайды
   } else d.append(f, document.createTextNode(m.body));
   box.appendChild(d);
   const all = box.querySelectorAll(".msg:not(.sys)");   // соңғы 50 хабар ғана
@@ -747,28 +750,55 @@ async function voiceUrl(id){
 function enqueueVoice(item){ voiceQueue.push(item); if (!curVoice) nextVoice(); }
 function nextVoice(){ const it = voiceQueue.shift(); if (it) playVoice(it); }
 function stopVoice(){
-  if (!curVoice) return; const {a, item} = curVoice; curVoice = null;
-  try{ a.pause(); }catch(e){} item.btn.textContent = "▶"; item.el.classList.remove("playing"); item.bar.style.width = "0";
+  if (!curVoice) return; const cv = curVoice; curVoice = null;
+  try{ cv.stop(); }catch(e){}
+  cv.item.btn.textContent = "▶"; cv.item.el.classList.remove("playing"); cv.item.bar.style.width = "0";
   $("speaking").hidden = true;
 }
+function dataToBuf(url){ const b64 = url.slice(url.indexOf(",")+1), bin = atob(b64), u = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i); return u.buffer; }
 async function playVoice(item){
-  try{
-    const a = new Audio(await voiceUrl(item.id)); curVoice = {a, item};
-    item.btn.textContent = "■"; item.el.classList.add("playing");
-    $("speaking").textContent = `🔊 ${item.name} сөйлеп жатыр...`; $("speaking").hidden = false;
-    a.ontimeupdate = ()=>{ if (a.duration && isFinite(a.duration)) item.bar.style.width = (100*a.currentTime/a.duration) + "%"; };
-    a.onended = ()=>{ stopVoice(); nextVoice(); };
-    a.onerror = ()=>{ stopVoice(); nextVoice(); };
-    await a.play();
-  }catch(e){
-    // браузер дыбысты өзі ойнатуға рұқсат бермесе — батырманы басып тыңдайды
+  let url;
+  try{ url = await voiceUrl(item.id); }catch(e){ toast("Дауыстық хабарды жүктей алмадық"); nextVoice(); return; }
+  const begin = (stop)=>{ curVoice = {item, stop}; item.btn.textContent = "■"; item.el.classList.add("playing");
+    $("speaking").textContent = `🔊 ${item.name} сөйлеп жатыр...`; $("speaking").hidden = false; };
+  const done = ()=>{ if (curVoice && curVoice.item === item){ stopVoice(); nextVoice(); } };
+  // 1) бірінші рет басқанда ашылған дыбыс арнасы арқылы (iPhone-да да, өзі ойнатқанда да жұмыс істейді)
+  const ac = audio();
+  if (ac && ac.state === "running"){
+    try{
+      const buf = await ac.decodeAudioData(dataToBuf(url));
+      const src = ac.createBufferSource(); src.buffer = buf; const g = ac.createGain(); g.gain.value = 2.2; src.connect(g); g.connect(ac.destination);
+      const t0 = ac.currentTime; let raf = 0;
+      begin(()=>{ cancelAnimationFrame(raf); src.onended = null; try{ src.stop(); }catch(e){} });
+      const tickBar = ()=>{ if (!curVoice || curVoice.item !== item) return; item.bar.style.width = Math.min(100, 100*(ac.currentTime-t0)/buf.duration) + "%"; raf = requestAnimationFrame(tickBar); };
+      src.onended = done; src.start(); tickBar();
+      return;
+    }catch(e){ /* төмендегі тәсілмен көреміз */ }
+  }
+  // 2) кәдімгі аудио элемент арқылы
+  const a = new Audio(url);
+  begin(()=>{ a.onended = a.onerror = null; a.pause(); });
+  a.ontimeupdate = ()=>{ if (a.duration && isFinite(a.duration)) item.bar.style.width = (100*a.currentTime/a.duration) + "%"; };
+  a.onended = done; a.onerror = ()=>{ done(); toast("Бұл хабарды осы құрылғы ойната алмады"); };
+  try{ await a.play(); }
+  catch(e){
     if (curVoice && curVoice.item === item) stopVoice();
-    item.btn.textContent = "▶";
-    if (String(e && e.name) === "NotAllowedError") toast(`${item.name} дауыстық хабар жіберді — ▶ басып тыңдаңыз`);
+    showListenBanner(item);
     nextVoice();
   }
 }
+// браузер дыбысты өзі ойнатпаса — үлкен «Тыңдау» батырмасы
+function showListenBanner(item){
+  hideBanner();
+  const b = document.createElement("div"); b.className = "banner"; b.setAttribute("role","status");
+  const s = document.createElement("span"); s.textContent = `🎤 ${item.name} дауыстық хабар жіберді`;
+  const y = document.createElement("button"); y.type="button"; y.className="btn-red"; y.textContent="▶ Тыңдау";
+  y.onclick = ()=>{ audio(); b.remove(); voiceQueue.length = 0; stopVoice(); playVoice(item); };
+  b.append(s, y); document.body.appendChild(b); setTimeout(()=>{ if (b.isConnected) b.remove(); }, 20000);
+}
 
+let sendingVoice = false;
+let recPeak = 1, recMeter = null;
 let rec = null, recStream = null, recChunks = [], recStart = 0, recTimer = null, recToggle = false, pressAt = 0;
 function recMime(){
   if (!window.MediaRecorder) return null;
@@ -780,14 +810,20 @@ async function startRec(){
   if (!joined){ toast("Алдымен ойынға қосылыңыз"); $("joinOverlay").hidden = false; return; }
   const mt = recMime(); if (mt === null){ toast("Бұл браузер дауыс жазуды қолдамайды"); return; }
   audio(); stopVoice();
-  try{ recStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}}); }
+  try{ recStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}}); }
   catch(e){ toast("Микрофонға рұқсат беріңіз (браузердің мекенжай жолағындағы 🔒 белгісі)"); return; }
   recChunks = [];
   try{ rec = new MediaRecorder(recStream, mt ? {mimeType:mt, audioBitsPerSecond:32000} : {audioBitsPerSecond:32000}); }
   catch(e){ rec = new MediaRecorder(recStream); }
   rec.ondataavailable = e=>{ if (e.data && e.data.size) recChunks.push(e.data); };
   rec.onstop = sendRec;
-  rec.start(250); recStart = Date.now();
+  rec.start(250); recStart = Date.now(); recPeak = 0;
+  // микрофон деңгейі
+  try{ const ac = audio(); if (ac){ const srcN = ac.createMediaStreamSource(recStream); const an = ac.createAnalyser(); an.fftSize = 1024; srcN.connect(an);
+    const arr = new Float32Array(an.fftSize);
+    recMeter = setInterval(()=>{ an.getFloatTimeDomainData(arr); let m = 0; for (const v of arr) m = Math.max(m, Math.abs(v));
+      recPeak = Math.max(recPeak, m); $("talkLvl").style.width = Math.min(100, m*160) + "%"; }, 60);
+    rec.meterNode = srcN; } }catch(e){ recPeak = 1; }
   $("talkBtn").classList.add("rec"); knock(AC ? AC.currentTime : 0, .4, 2000);
   const upd = ()=>{ const sec = (Date.now()-recStart)/1000;
     $("talkLabel").innerHTML = ""; $("talkLabel").append("Жазып жатыр ", Object.assign(document.createElement("span"),{className:"sec",textContent:fmtSec(sec)}), recToggle ? " · жіберу үшін басыңыз" : " · жіберу үшін жіберіңіз");
@@ -795,7 +831,7 @@ async function startRec(){
   upd(); recTimer = setInterval(upd, 250);
 }
 function stopRec(cancel){
-  if (!rec) return; clearInterval(recTimer);
+  if (!rec) return; clearInterval(recTimer); clearInterval(recMeter); try{ rec.meterNode && rec.meterNode.disconnect(); }catch(e){}
   rec.cancelled = !!cancel; try{ rec.stop(); }catch(e){}
   if (recStream) recStream.getTracks().forEach(t=>t.stop());
   $("talkBtn").classList.remove("rec"); $("talkLabel").textContent = "Басып тұрып сөйлеңіз"; recToggle = false;
@@ -805,13 +841,15 @@ async function sendRec(){
   const dur = (Date.now()-recStart)/1000;
   if (r.cancelled) return;
   if (dur < 0.7 || !recChunks.length){ toast("Тым қысқа. Батырманы басып тұрып сөйлеңіз"); return; }
+  if (recPeak < 0.01){ toast("Микрофоннан дыбыс келмеді. Компьютердің микрофоны қосулы ма, браузерде дұрыс микрофон таңдалған ба — тексеріңіз"); return; }
   const blob = new Blob(recChunks, {type: r.mimeType || (recChunks[0] && recChunks[0].type) || "audio/webm"});
   const url = await new Promise(res=>{ const fr = new FileReader(); fr.onload = ()=>res(fr.result); fr.readAsDataURL(blob); });
   if (url.length >= 400000){ toast("Хабар тым ұзақ болды"); return; }
   const clean = url.replace(/^data:audio\/([^;,]+)[^,]*?;base64,/, (m0, sub)=>"data:audio/"+sub+";base64,");
-  $("talkLabel").textContent = "Жіберілуде...";
+  $("talkLabel").textContent = "Жіберілуде..."; sendingVoice = true;
   try{ const {error} = await sb.rpc("zhl_voice_say",{p_code:ROOM,p_pid:PID,p_audio:clean,p_dur:dur}); if (error) throw error; toast("🎙 Жіберілді"); }
   catch(e){ toast("Дауыстық хабар жіберілмеді, қайталап көріңіз"); }
+  setTimeout(()=>{ sendingVoice = false; }, 1500);
   $("talkLabel").textContent = "Басып тұрып сөйлеңіз";
 }
 // басып тұрып сөйлеу; қысқа бассаңыз — бір басқанда жазу, тағы басқанда жіберу
