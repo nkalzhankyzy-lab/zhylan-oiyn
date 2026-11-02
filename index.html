@@ -113,6 +113,30 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
   box-shadow:0 6px 0 rgba(0,0,0,.2);width:min(460px,calc(100% - 32px));font-size:15px}
 .banner span{flex:1;min-width:160px}
 .modal .robot{font-size:46px;text-align:center;line-height:1}
+.boardbox{position:relative}
+#throwLayer{position:absolute;inset:0;pointer-events:none;perspective:900px;z-index:5}
+.dwrap{position:absolute;left:0;top:0;transform-style:preserve-3d;transition:opacity .4s}
+.dwrap.fade{opacity:0}
+.dshadow{position:absolute;left:8%;right:8%;bottom:-16%;height:26%;border-radius:50%;background:radial-gradient(rgba(0,0,0,.42),rgba(0,0,0,0) 70%)}
+.cube{position:absolute;inset:0;transform-style:preserve-3d}
+.face{position:absolute;inset:0;background:linear-gradient(145deg,#fff,#e9edf1);border:2px solid #b9c2cb;border-radius:18%;
+  display:grid;grid-template:repeat(3,1fr)/repeat(3,1fr);padding:14%;backface-visibility:hidden}
+.face i{display:block;margin:auto;width:72%;height:72%;border-radius:50%;background:#22303c;box-shadow:inset 0 2px 2px rgba(0,0,0,.5);visibility:hidden}
+.face i.on{visibility:visible}
+.face.f1 i{background:#e53935;width:95%;height:95%}
+.rollbtn{width:100%;margin-top:10px;font-size:19px;padding:12px;border-radius:14px;box-shadow:0 5px 0 var(--line);transition:transform .08s}
+.rollbtn:active:not(:disabled){transform:translateY(4px);box-shadow:0 1px 0 var(--line)}
+.celebrate{z-index:40}
+#confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:41}
+.winmodal{text-align:center;justify-items:center;position:relative;z-index:42;animation:popin .5s cubic-bezier(.3,1.6,.5,1)}
+.winpic{width:150px;height:150px;border-radius:50%;border:7px solid var(--accent);background:#eee center/cover no-repeat;display:grid;place-items:center;
+  font-size:64px;font-weight:900;color:#fff;box-shadow:0 6px 0 rgba(0,0,0,.2);animation:wiggle 1.4s ease-in-out infinite;margin-top:-6px}
+.crown{font-size:44px;line-height:1;margin-bottom:-18px;position:relative;z-index:1;animation:bob 1s ease-in-out infinite}
+.winmodal h2{font-size:28px}
+@keyframes popin{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes wiggle{0%,100%{transform:rotate(-4deg) scale(1)}50%{transform:rotate(4deg) scale(1.06)}}
+@keyframes bob{50%{transform:translateY(-8px)}}
+@media (prefers-reduced-motion:reduce){.winmodal,.winpic,.crown{animation:none}}
 @media (prefers-reduced-motion:reduce){.tok,.tok.slide,.tok .lifter,.tok .shadow{transition:none}.dice.mine,.dice.rolling svg{animation:none}}
 </style>
 </head>
@@ -123,7 +147,7 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
     <div class="roomchip" id="roomchip" hidden>Бөлме <b id="roomcode"></b><button class="btn-small btn-red" id="shareBtn" type="button">Шақыру</button></div>
   </header>
 
-  <div class="boardbox"><svg id="board" viewBox="0 0 1000 1000" role="img" aria-label="Ойын тақтасы"></svg></div>
+  <div class="boardbox"><svg id="board" viewBox="0 0 1000 1000" role="img" aria-label="Ойын тақтасы"></svg><div id="throwLayer" aria-hidden="true"></div></div>
 
   <div class="side">
     <section class="card" aria-live="polite">
@@ -132,6 +156,7 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
         <div class="turninfo"><div class="who" id="who">Ойынға қосылыңыз</div><div class="hint" id="hint">Атыңызды жазып кіріңіз</div></div>
         <div class="timer" id="timer" hidden><svg viewBox="0 0 54 54"><circle cx="27" cy="27" r="23" fill="none" stroke="#e3e8ed" stroke-width="6"/><circle id="timerArc" cx="27" cy="27" r="23" fill="none" stroke="#e53935" stroke-width="6" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="0"/></svg><b id="timerNum">20</b></div>
       </div>
+      <button class="btn-red rollbtn" id="rollBtn" type="button" disabled>🎲 Кубикті лақтыру</button>
       <div class="log" id="log">Кім бірінші 100-ге жетеді?</div>
       <div class="row" id="winRow" hidden style="margin-top:10px"><button class="btn-red big" id="restartBtn" type="button">Қайта бастау</button></div>
     </section>
@@ -163,6 +188,16 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
 </div>
 
 <input type="file" id="photoInput" accept="image/*" hidden>
+<div class="overlay celebrate" id="winOverlay" hidden>
+  <canvas id="confetti"></canvas>
+  <div class="modal winmodal">
+    <div class="crown">👑</div>
+    <div class="winpic" id="winPic"></div>
+    <h2 id="winTitle">Жеңімпаз!</h2>
+    <p>100-ге бірінші жетті! Құттықтаймыз! 🎉</p>
+    <div class="row" style="justify-content:center"><button class="btn-red big" id="winRestart" type="button">Қайта ойнау</button><button class="big" id="winClose" type="button">Жабу</button></div>
+  </div>
+</div>
 <div class="overlay" id="aloneOverlay" hidden>
   <div class="modal">
     <div class="robot">🤖</div>
@@ -268,8 +303,9 @@ function knock(t, vol, freq){ const ac=AC; const len=0.05; const buf=ac.createBu
   const src=ac.createBufferSource(); src.buffer=buf; const f=ac.createBiquadFilter(); f.type="bandpass"; f.frequency.value=freq; f.Q.value=1.4;
   const g=ac.createGain(); g.gain.value=vol; src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); }
 function diceSound(){ const ac = audio(); if (!ac) return; const now = ac.currentTime;
-  for (let i=0;i<9;i++) knock(now + i*0.06 + Math.random()*0.03, 0.5+Math.random()*0.4, 1800+Math.random()*1800);
-  knock(now+0.62, 1.1, 900); knock(now+0.72, 0.6, 1100); }
+  for (let i=0;i<5;i++) knock(now + i*0.05 + Math.random()*0.02, 0.35, 2600+Math.random()*1500);   // қолда шылдырлау
+  knock(now+0.62, 1.2, 850); knock(now+0.80, 0.8, 1000); knock(now+0.93, 0.5, 1200);           // тақтаға соғылуы
+  for (let i=0;i<4;i++) knock(now+1.0+i*0.05, 0.25-i*0.05, 1500); }
 function tone(freqs, dur){ const ac = audio(); if (!ac) return; let t = ac.currentTime;
   for (const f of freqs){ const o=ac.createOscillator(), g=ac.createGain(); o.type="triangle"; o.frequency.value=f; g.gain.setValueAtTime(0.18,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
     o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur); t += dur*0.7; } }
@@ -311,7 +347,7 @@ async function applyOne(s){
     disp[L.pid] = L.from;
     animating = true; render();
     $("diceBtn").classList.add("rolling"); diceSound();
-    for (let i=0;i<6;i++){ drawDie(1+Math.floor(Math.random()*6)); await sleep(100); }
+    await throwDice(L.die);
     $("diceBtn").classList.remove("rolling"); drawDie(L.die);
     rolling = false;
     $("log").textContent = `${pname(L.pid)}: ${L.die} түсті`;
@@ -331,7 +367,7 @@ async function applyOne(s){
     if (L.via && L.die===6 && s.status!=="won") $("log").textContent += ". 6 түсті — тағы лақтырады!";
     setLift(L.pid, false);
     animating = false;
-    if (s.status==="won") sndWin();
+    if (s.status==="won") celebrate(s.winner);
   } else if (!first && L && L.skip){
     $("log").textContent = `${pname(L.pid)} ${TURN_SEC} секундта лақтырмады — кезек келесіге өтті`;
   }
@@ -440,6 +476,8 @@ function render(){
   const dice = $("diceBtn");
   dice.disabled = !myTurn || animating || rolling;
   dice.classList.toggle("mine", myTurn && !animating && !rolling);
+  $("rollBtn").disabled = dice.disabled;
+  $("rollBtn").textContent = myTurn ? "🎲 Кубикті лақтыру" : (cur && state.status==="playing" ? `${cur.bot?"🤖 ":""}${cur.name} лақтырады...` : "🎲 Кубикті лақтыру");
   $("winRow").hidden = !(state && state.status==="won" && joined);
   if (!state || !state.players.length){ $("who").textContent = "Ойынға қосылыңыз"; $("hint").textContent = "Атыңызды жазып кіріңіз"; $("timer").hidden = true; return; }
   if (state.status==="won"){
@@ -483,12 +521,15 @@ function tick(){
 setInterval(tick, 250);
 
 /* ---------- әрекеттер ---------- */
-$("diceBtn").addEventListener("click", async ()=>{
-  audio(); rolling = true; render(); $("diceBtn").classList.add("rolling"); diceSound();
+async function doRoll(){
+  if (rolling || animating) return;
+  audio(); rolling = true; render(); $("diceBtn").classList.add("rolling");
   try{ const d = await rpc("zhl_roll",{p_code:ROOM,p_pid:PID}); applyState(d.state); }
   catch(e){ rolling=false; $("diceBtn").classList.remove("rolling"); toast("Байланыс үзілді, қайта басыңыз"); render(); }
   setTimeout(()=>{ if (rolling && !animating){ rolling=false; $("diceBtn").classList.remove("rolling"); render(); } }, 4000);
-});
+}
+$("diceBtn").addEventListener("click", doRoll);
+$("rollBtn").addEventListener("click", doRoll);
 $("joinForm").addEventListener("submit", async e=>{
   e.preventDefault(); audio();
   const name = $("nameInput").value.trim(); if (!name) return;
@@ -523,6 +564,102 @@ $("photoInput").addEventListener("change", async ()=>{
     photos[PID] = data; render(); toast("Фото қойылды! Енді фишкаңыз сіздің бетіңізбен жүреді");
   }catch(e){ toast("Бұл суретті аша алмадық. Басқа фото таңдап көріңіз"); }
 });
+
+/* ---------- тақтаға лақтырылатын 3D кубик ---------- */
+const FACE_PIPS = {1:[5],2:[1,9],3:[1,5,9],4:[1,3,7,9],5:[1,3,5,7,9],6:[1,3,4,6,7,9]};
+const FACE_POS = {1:"", 6:"rotateY(180deg)", 3:"rotateY(90deg)", 4:"rotateY(-90deg)", 5:"rotateX(90deg)", 2:"rotateX(-90deg)"};
+const SHOW = {1:[0,0], 6:[0,180], 3:[0,-90], 4:[0,90], 5:[-90,0], 2:[90,0]};
+let throwHideT = null;
+function throwDice(n){
+  return new Promise(resolve=>{
+    const layer = $("throwLayer"); clearTimeout(throwHideT); layer.innerHTML = "";
+    const W = layer.clientWidth, H = layer.clientHeight, S = Math.max(44, Math.round(W*0.11)), h = S/2;
+    const wrap = document.createElement("div"); wrap.className = "dwrap"; wrap.style.width = wrap.style.height = S+"px";
+    const sh = document.createElement("div"); sh.className = "dshadow"; wrap.appendChild(sh);
+    const cube = document.createElement("div"); cube.className = "cube"; wrap.appendChild(cube);
+    for (const v of [1,2,3,4,5,6]){
+      const f = document.createElement("div"); f.className = "face f"+v; f.style.transform = `${FACE_POS[v]} translateZ(${h}px)`;
+      for (let k=1;k<=9;k++){ const i = document.createElement("i"); if (FACE_PIPS[v].includes(k)) i.className = "on"; f.appendChild(i); }
+      cube.appendChild(f);
+    }
+    layer.appendChild(wrap);
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const x1 = W*(0.22+Math.random()*0.56) - h, y1 = H*(0.22+Math.random()*0.56) - h;
+    const fromLeft = Math.random() < 0.5;
+    const x0 = fromLeft ? -S : W, y0 = H*(0.65+Math.random()*0.35);
+    const dx = x1-x0, dy = y1-y0;
+    const [fx, fy] = SHOW[n], tilt = "rotateX(-14deg) rotateY(16deg)";
+    const end = `${tilt} rotateX(${fx}deg) rotateY(${fy}deg) rotateZ(0deg)`;
+    if (reduce){ wrap.style.transform = `translate(${x1}px,${y1}px)`; cube.style.transform = end; setTimeout(resolve, 150); }
+    else {
+      const sx = 360*(2+Math.floor(Math.random()*2)) * (Math.random()<.5?1:-1), sy = 360*(1+Math.floor(Math.random()*2)) * (fromLeft?1:-1), sz = (Math.random()*80-40);
+      wrap.animate([
+        {transform:`translate(${x0}px,${y0}px) scale(1.7)`, offset:0},
+        {transform:`translate(${x0+dx*.45}px,${y0+dy*.45 - H*.18}px) scale(1.45)`, offset:.38},
+        {transform:`translate(${x0+dx*.82}px,${y0+dy*.82}px) scale(1)`, offset:.62},
+        {transform:`translate(${x0+dx*.93}px,${y0+dy*.93 - S*.45}px) scale(1.12)`, offset:.78},
+        {transform:`translate(${x1}px,${y1}px) scale(1)`, offset:.9},
+        {transform:`translate(${x1}px,${y1}px) scale(1)`, offset:1}
+      ], {duration:1150, easing:"ease-out", fill:"forwards"});
+      cube.animate([
+        {transform:`${tilt} rotateX(${fx+sx}deg) rotateY(${fy+sy}deg) rotateZ(${sz}deg)`},
+        {transform:end}
+      ], {duration:1150, easing:"cubic-bezier(.15,.65,.3,1)", fill:"forwards"});
+      setTimeout(resolve, 1150);
+    }
+    throwHideT = setTimeout(()=>{ wrap.classList.add("fade"); setTimeout(()=>wrap.remove(), 450); }, 3200);
+  });
+}
+
+/* ---------- жеңімпаз: фото, конфетти, музыка ---------- */
+function winMusic(){
+  const ac = audio(); if (!ac) return; const t0 = ac.currentTime + 0.05;
+  const N = {G4:392,A4:440,B4:494,C5:523,D5:587,E5:659,F5:698,G5:784,A5:880,C6:1047};
+  const song = [["G4",.12],["C5",.12],["E5",.12],["G5",.36],["E5",.12],["G5",.6],[null,.15],
+                ["C5",.18],["C5",.18],["C5",.18],["D5",.18],["E5",.36],["C5",.18],["E5",.18],["G5",.6],[null,.1],
+                ["A5",.18],["G5",.18],["E5",.18],["C5",.18],["D5",.36],["G4",.36],["C5",.9]];
+  let t = t0;
+  for (const [nn, d] of song){
+    if (nn){ for (const [type, vol, mul] of [["triangle",.22,1],["square",.05,2]]){
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = N[nn]*mul;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t+.02); g.gain.exponentialRampToValueAtTime(.001, t+d*.95);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+d); } }
+    t += d;
+  }
+  // барабан
+  for (let i=0;i<8;i++) knock(t0 + 1.68 + i*0.36, .9, 180);
+}
+let confettiRun = 0;
+function confetti(){
+  const cv = $("confetti"), ctx = cv.getContext("2d"), run = ++confettiRun;
+  const W = cv.width = innerWidth, H = cv.height = innerHeight;
+  const cols = ["#e53935","#fdd835","#1e88e5","#43a047","#fb8c00","#ec407a","#8e24aa"];
+  const P = []; const add = (x, dir)=>{ for (let i=0;i<90;i++) P.push({x, y:H*0.75, vx:dir*(4+Math.random()*9), vy:-(9+Math.random()*12), r:Math.random()*6.28, vr:(Math.random()-.5)*.4, w:7+Math.random()*7, h:4+Math.random()*5, c:cols[i%cols.length]}); };
+  add(0, 1); add(W, -1);
+  setTimeout(()=>{ if (run===confettiRun){ for (let i=0;i<120;i++) P.push({x:Math.random()*W, y:-20-Math.random()*200, vx:(Math.random()-.5)*3, vy:2+Math.random()*3, r:Math.random()*6.28, vr:(Math.random()-.5)*.3, w:7+Math.random()*7, h:4+Math.random()*5, c:cols[i%cols.length]}); } }, 900);
+  const start = performance.now();
+  (function frame(now){
+    if (run !== confettiRun) return;
+    ctx.clearRect(0,0,W,H);
+    for (const p of P){ p.vy += .28; p.vx *= .985; p.vy = Math.min(p.vy, 6); p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h*Math.abs(Math.cos(p.r*2))+1); ctx.restore(); }
+    if (now - start < 7000) requestAnimationFrame(frame); else ctx.clearRect(0,0,W,H);
+  })(start);
+}
+function celebrate(wid){
+  const p = playerById(wid); if (!p) return;
+  const pic = $("winPic"), col = PCOLORS[p.color%8];
+  pic.style.borderColor = col; pic.textContent = "";
+  if (photos[wid]){ pic.style.backgroundImage = `url("${photos[wid]}")`; pic.style.backgroundColor = "#fff"; }
+  else { pic.style.backgroundImage = "none"; pic.style.backgroundColor = col; pic.textContent = p.bot ? "🤖" : (p.name||"?").trim().charAt(0).toUpperCase(); }
+  $("winTitle").textContent = `🏆 ${p.bot ? "Компьютер" : p.name} жеңді!`;
+  $("winRestart").hidden = !joined;
+  $("winOverlay").hidden = false;
+  winMusic();
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) confetti();
+}
+$("winClose").addEventListener("click", ()=>{ $("winOverlay").hidden = true; confettiRun++; });
+$("winRestart").addEventListener("click", ()=>{ $("winOverlay").hidden = true; confettiRun++; $("restartBtn").click(); });
 
 async function addBot(){
   $("aloneOverlay").hidden = true; aloneDismissed = true;
