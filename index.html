@@ -162,13 +162,8 @@ const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}},
 /* ---------- бөлме коды ---------- */
 const params = new URLSearchParams(location.search);
 let ROOM = (params.get("room")||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
-if (ROOM.length < 4){
-  const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; ROOM = "";
-  for (let i=0;i<5;i++) ROOM += abc[Math.floor(Math.random()*abc.length)];
-  params.set("room", ROOM);
-  history.replaceState(null, "", location.pathname + "?" + params.toString());
-}
-const LINK = location.origin + location.pathname + "?room=" + ROOM;
+if (ROOM.length < 4) ROOM = "OTBASY";   // жай сілтеме — бәрі бір отбасылық бөлмеде
+const LINK = location.origin + location.pathname + (ROOM === "OTBASY" ? "" : "?room=" + ROOM);
 $("roomcode").textContent = ROOM; $("roomchip").hidden = false; $("joinLink").textContent = LINK;
 
 let PID = store.get("zhl_pid");
