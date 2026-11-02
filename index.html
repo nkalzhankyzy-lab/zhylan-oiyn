@@ -97,6 +97,13 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
 .big{font-size:18px;padding:12px 16px}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--line);color:#fff;padding:10px 16px;border-radius:999px;font-size:15px;z-index:30;max-width:calc(100% - 32px);text-align:center}
 .win{font-size:28px;text-align:center}
+.botx{padding:3px 9px;font-size:12px;border-radius:999px;border-width:2px}
+.headbtns{display:flex;gap:6px;flex-wrap:wrap}
+.banner{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:25;
+  background:var(--panel);border:3px solid var(--line);border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  box-shadow:0 6px 0 rgba(0,0,0,.2);width:min(460px,calc(100% - 32px));font-size:15px}
+.banner span{flex:1;min-width:160px}
+.modal .robot{font-size:46px;text-align:center;line-height:1}
 @media (prefers-reduced-motion:reduce){.tok,.tok.slide{transition:none}.dice.mine,.dice.rolling svg{animation:none}}
 </style>
 </head>
@@ -121,7 +128,7 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
     </section>
 
     <section class="card">
-      <h3 class="cardtitle">Ойыншылар <button class="btn-small" id="leaveBtn" type="button" hidden>Ойыннан шығу</button></h3>
+      <h3 class="cardtitle">Ойыншылар <span class="headbtns"><button class="btn-small" id="addBotBtn" type="button" hidden>+ 🤖 Компьютер</button><button class="btn-small" id="leaveBtn" type="button" hidden>Ойыннан шығу</button></span></h3>
       <ul class="players" id="players"><li style="color:var(--muted)">Әзірге ешкім жоқ</li></ul>
     </section>
 
@@ -144,6 +151,16 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
     <div class="linkbox" id="joinLink"></div>
     <button type="button" id="copyBtn2">Сілтемені көшіру</button>
   </form>
+</div>
+
+<div class="overlay" id="aloneOverlay" hidden>
+  <div class="modal">
+    <div class="robot">🤖</div>
+    <h2 id="aloneTitle">Бөлмеде сізден басқа ешкім жоқ</h2>
+    <p>Компьютермен ойнайсыз ба? Туыс-достарыңыз сілтеме арқылы кірсе, ойынға бірден қосылады, ал компьютерді кез келген уақытта шығарып жібере аласыз.</p>
+    <button class="btn-red big" type="button" id="aloneYes">Иә, компьютермен ойнаймын</button>
+    <button class="big" type="button" id="aloneWait">Туыс-досты күтемін</button>
+  </div>
 </div>
 
 <script>
@@ -271,6 +288,11 @@ async function applyOne(s){
   if (seq <= lastSeq && state) return;
   const first = lastSeq < 0;
   const prev = state; lastSeq = seq; state = s;
+  if (!first && prev && s.players.some(p=>p.bot)){
+    const newcomer = s.players.find(p=>!p.bot && p.id!==PID && !prev.players.some(q=>q.id===p.id));
+    if (newcomer) showJoinBanner(newcomer.name);
+  }
+  if (!s.players.some(p=>p.bot)) hideBanner();
   const L = s.last;
   const moved = !first && L && !L.skip && L.pid && (!prev || !prev.last || JSON.stringify(prev.last)!==JSON.stringify(L) || prev.seq !== s.seq) && L.die;
   for (const p of s.players) if (disp[p.id] === undefined || first) disp[p.id] = p.pos;
@@ -321,7 +343,7 @@ function renderTokens(slide, slidePid, slideTo){
       el("circle",{cx:0,cy:0,r:22,fill:PCOLORS[p.color%8],stroke:"#fff","stroke-width":5},g);
       el("circle",{cx:0,cy:0,r:22,fill:"none",stroke:"#22303c","stroke-width":2.5},g);
       const t = el("text",{x:0,y:8,"text-anchor":"middle","font-size":22,"font-weight":900,fill:"#fff","font-family":"Nunito, sans-serif"},g);
-      t.textContent = (p.name||"?").trim().charAt(0).toUpperCase();
+      t.textContent = p.bot ? "🤖" : (p.name||"?").trim().charAt(0).toUpperCase();
     }
     const pos = (slidePid===p.id && slide) ? slideTo : disp[p.id];
     if (!(pos>0)){ g.setAttribute("visibility","hidden"); continue; }
@@ -341,14 +363,18 @@ function render(){
   if (!state || !state.players.length){ const li=document.createElement("li"); li.style.color="var(--muted)"; li.textContent="Әзірге ешкім жоқ"; ul.appendChild(li); }
   else state.players.forEach((p,i)=>{
     const li = document.createElement("li"); if (i===state.turn && state.status==="playing") li.className="now";
-    const on = document.createElement("span"); on.className = "online" + (online.has(p.id)?" on":""); on.title = online.has(p.id)?"Желіде":"Желіде емес";
+    const isOn = p.bot || online.has(p.id);
+    const on = document.createElement("span"); on.className = "online" + (isOn?" on":""); on.title = isOn?"Желіде":"Желіде емес";
     const dot = document.createElement("span"); dot.className="dot"; dot.style.background = PCOLORS[p.color%8];
-    const nm = document.createElement("span"); nm.className="nm"; nm.textContent = p.name + (p.id===PID?" (сіз)":"");
+    const nm = document.createElement("span"); nm.className="nm"; nm.textContent = (p.bot?"🤖 ":"") + p.name + (p.id===PID?" (сіз)":"");
     const pos = document.createElement("span"); pos.className="pos"; pos.textContent = disp[p.id]>0 ? disp[p.id]+"-шаршы" : "старт";
-    li.append(on,dot,nm,pos); ul.appendChild(li);
+    li.append(on,dot,nm,pos);
+    if (p.bot && joined){ const x = document.createElement("button"); x.type="button"; x.className="botx"; x.textContent="✕ Шығару"; x.title="Компьютерді ойыннан шығару"; x.onclick = kickBot; li.appendChild(x); }
+    ul.appendChild(li);
   });
-  $("leaveBtn").hidden = !joined;
   const me = playerById(PID); joined = !!me;
+  $("leaveBtn").hidden = !joined;
+  $("addBotBtn").hidden = !joined || !!botPlayer();
   const cur = state && state.players[state.turn];
   const myTurn = !!(cur && cur.id===PID && state.status==="playing");
   const dice = $("diceBtn");
@@ -361,12 +387,32 @@ function render(){
     if (!animating) $("log").innerHTML = "", $("log").append(Object.assign(document.createElement("div"),{className:"win",textContent:`${pname(state.winner)} 100-ге жетті!`}));
     return;
   }
-  $("timer").hidden = false;
-  if (myTurn){ $("who").textContent = "Сіздің кезегіңіз!"; $("hint").textContent = "Сақаны басып лақтырыңыз"; }
+  $("timer").hidden = !!cur.bot;
+  if (cur.bot){ $("who").textContent = "🤖 Компьютер лақтырады"; $("hint").textContent = "Ойлап жатыр..."; }
+  else if (myTurn){ $("who").textContent = "Сіздің кезегіңіз!"; $("hint").textContent = "Сақаны басып лақтырыңыз"; }
   else { $("who").textContent = `${cur.name} лақтырады`; $("hint").textContent = `${PCNAMES[cur.color%8]} фишка` + (joined?"":" · қосылу үшін атыңызды жазыңыз"); }
 }
+function botPlayer(){ return state && state.players.find(p=>p.bot); }
+function otherHumansOnline(){ return state ? state.players.filter(p=>!p.bot && p.id!==PID && online.has(p.id)).length : 0; }
+let botAskedFor = -1, aloneSince = 0, aloneDismissed = false, presenceSynced = false;
 function tick(){
-  if (state && state.status==="playing" && state.players.length && !animating){
+  // компьютердің кезегі: бөлмедегі бірінші желідегі адамның браузері лақтырады
+  if (state && state.status==="playing" && joined && !animating){
+    const cur = state.players[state.turn];
+    if (cur && cur.bot && botAskedFor !== state.seq && serverNow() - state.turnStarted > 1300){
+      const driver = state.players.find(p=>!p.bot && (p.id===PID || online.has(p.id)));
+      if (driver && driver.id===PID){ botAskedFor = state.seq;
+        rpc("zhl_roll_bot",{p_code:ROOM,p_pid:PID,p_seq:state.seq}).then(d=>applyState(d.state)).catch(()=>{ botAskedFor=-1; }); }
+    }
+  }
+  // жалғыз қалды ма?
+  const alone = joined && presenceSynced && !botPlayer() && otherHumansOnline()===0;
+  if (!alone){ aloneSince = 0; if (otherHumansOnline()>0) aloneDismissed = false; }
+  else { if (!aloneSince) aloneSince = Date.now();
+    if (!aloneDismissed && Date.now()-aloneSince > 3500 && $("aloneOverlay").hidden && $("joinOverlay").hidden){
+      $("aloneTitle").textContent = state.players.length>1 ? "Ешкім қалмады" : "Бөлмеде сізден басқа ешкім жоқ";
+      $("aloneOverlay").hidden = false; } }
+  if (state && state.status==="playing" && state.players.length && !animating && !(state.players[state.turn]||{}).bot){
     const left = Math.max(0, TURN_SEC - (serverNow() - state.turnStarted)/1000);
     $("timerNum").textContent = Math.ceil(left);
     $("timerArc").setAttribute("stroke-dashoffset", (144.5*(1-left/TURN_SEC)).toFixed(1));
@@ -398,6 +444,31 @@ $("leaveBtn").addEventListener("click", async ()=>{
 });
 $("restartBtn").addEventListener("click", async ()=>{ try{ const d = await rpc("zhl_restart",{p_code:ROOM,p_pid:PID}); $("log").textContent="Жаңа ойын басталды!"; applyState(d.state);}catch(e){ toast("Қайта бастау сәтсіз"); } });
 
+async function addBot(){
+  $("aloneOverlay").hidden = true; aloneDismissed = true;
+  const absent = state ? state.players.filter(p=>!p.bot && p.id!==PID && !online.has(p.id)).map(p=>p.id) : [];
+  try{ const d = await rpc("zhl_add_bot",{p_code:ROOM,p_pid:PID,p_remove:absent}); applyState(d.state); $("log").textContent = "🤖 Компьютер ойынға қосылды. Сәттілік!"; }
+  catch(e){ toast("Компьютерді қоса алмадық"); }
+}
+async function kickBot(){
+  hideBanner();
+  try{ const d = await rpc("zhl_kick_bot",{p_code:ROOM,p_pid:PID}); applyState(d.state); toast("Компьютер ойыннан шықты"); }
+  catch(e){ toast("Шығара алмадық, қайта басыңыз"); }
+}
+function hideBanner(){ const b = document.querySelector(".banner"); if (b) b.remove(); }
+function showJoinBanner(name){
+  hideBanner(); if (!joined) return;
+  const b = document.createElement("div"); b.className = "banner"; b.setAttribute("role","status");
+  const s = document.createElement("span"); s.textContent = `👋 ${name} қосылды! Компьютерді шығарасыз ба?`;
+  const y = document.createElement("button"); y.type="button"; y.className="btn-red btn-small"; y.textContent="Шығару"; y.onclick = kickBot;
+  const n = document.createElement("button"); n.type="button"; n.className="btn-small"; n.textContent="Қалсын"; n.onclick = hideBanner;
+  b.append(s,y,n); document.body.appendChild(b); setTimeout(()=>{ if (b.isConnected) b.remove(); }, 15000);
+}
+$("addBotBtn").addEventListener("click", addBot);
+$("aloneYes").addEventListener("click", addBot);
+$("aloneWait").addEventListener("click", ()=>{ $("aloneOverlay").hidden = true; aloneDismissed = true;
+  $("log").textContent = "Туыс-достарды күтудесіз. Сілтемені «Шақыру» батырмасымен жіберіңіз. Ойнағыңыз келсе — «+ 🤖 Компьютер»."; });
+
 async function copyLink(){
   if (navigator.share){ try{ await navigator.share({title:"Жыландар мен баспалдақтар", text:"Бірге ойнайық! Мына сілтемеге кіріп, атыңды жаз:", url:LINK}); return; }catch(e){ if (e.name==="AbortError") return; } }
   try{ await navigator.clipboard.writeText(LINK); toast("Сілтеме көшірілді — WhatsApp-қа салыңыз"); }
@@ -428,7 +499,7 @@ $("chatForm").addEventListener("submit", e=>{ e.preventDefault(); const v=$("cha
 const ch = sb.channel("zhl:"+ROOM, {config:{presence:{key:PID}}});
 ch.on("postgres_changes",{event:"*",schema:"public",table:"zhl_rooms",filter:"code=eq."+ROOM}, pl=>{ if (pl.new && pl.new.state) applyState(pl.new.state); })
   .on("postgres_changes",{event:"INSERT",schema:"public",table:"zhl_chat",filter:"room=eq."+ROOM}, pl=>addMsg(pl.new))
-  .on("presence",{event:"sync"}, ()=>{ online = new Set(Object.keys(ch.presenceState())); render(); })
+  .on("presence",{event:"sync"}, ()=>{ online = new Set(Object.keys(ch.presenceState())); setTimeout(()=>{ presenceSynced = true; }, 1500); if (!animating) render(); })
   .subscribe(st=>{ if (st==="SUBSCRIBED"){ track(); refresh(); } });
 function track(){ if (joined || store.get("zhl_name")) ch.track({at:Date.now()}).catch(()=>{}); }
 
