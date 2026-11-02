@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="kk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Жыландар мен баспалдақтар</title>
+<meta name="description" content="Отбасымен бірге онлайн ойнайтын «Жыландар мен баспалдақтар»">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+/* Ойын үстелі: кілем түсті фон, ортада ашық түсті тақта, астында кезек пен чат */
+:root{
+  --rug:#dfe5ea; --rug-dot:#c9d2da; --panel:#ffffff; --ink:#1f2a37; --muted:#5b6876;
+  --red:#e53935; --blue:#1e88e5; --yellow:#fdd835; --green:#43a047; --white:#fafafa;
+  --line:#22303c; --snake:#f2a7d8; --snake-dark:#b4527f; --ladder:#f6d52b;
+  --accent:#e53935; --ok:#2e7d32;
+  --font:"Nunito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:var(--font); color:var(--ink); font-weight:700;
+  background:var(--rug);
+  background-image:radial-gradient(var(--rug-dot) 1.2px,transparent 1.4px);
+  background-size:14px 14px;
+  min-height:100vh;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+.wrap{max-width:1100px;margin:0 auto;padding-block:12px 24px;
+  padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));
+  display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+@media(min-width:900px){.wrap{grid-template-columns:minmax(0,1fr) 340px;align-items:start}}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;grid-column:1/-1}
+header h1{font-size:clamp(18px,4.6vw,24px);margin:0;font-weight:900;letter-spacing:-.01em;flex:1;min-width:0;text-wrap:balance}
+header h1 span{color:var(--accent)}
+.roomchip{background:var(--panel);border:2px solid var(--line);border-radius:999px;padding:6px 6px 6px 12px;display:flex;align-items:center;gap:8px;font-size:14px}
+.roomchip b{letter-spacing:.12em}
+button{font-family:inherit;font-weight:800;cursor:pointer;border:2px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:8px 12px;font-size:15px}
+button:focus-visible,input:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.btn-red{background:var(--accent);color:#fff}
+.btn-small{padding:5px 10px;font-size:13px;border-radius:999px}
+
+.boardbox{background:var(--panel);border:3px solid var(--line);border-radius:6px;padding:6px;box-shadow:0 6px 0 rgba(31,42,55,.18)}
+#board{display:block;width:100%;height:auto;max-width:100%;aspect-ratio:1/1}
+.tok{transition:transform .17s ease-out}
+.tok.slide{transition:transform .65s cubic-bezier(.45,.05,.3,1)}
+
+.side{display:grid;gap:12px;min-width:0}
+.card{background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:12px}
+.turnrow{display:flex;align-items:center;gap:12px}
+.dice{width:76px;height:76px;flex:none;border-radius:16px;border:3px solid var(--line);background:#fff;display:grid;place-items:center;padding:0;box-shadow:0 5px 0 var(--line);transition:transform .08s}
+.dice:active:not(:disabled){transform:translateY(4px);box-shadow:0 1px 0 var(--line)}
+.dice.mine{background:#fff7d1;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 5px 0 var(--line),0 0 0 7px rgba(229,57,53,.25)}}
+.dice svg{width:56px;height:56px}
+.dice.rolling svg{animation:shake .12s linear infinite}
+@keyframes shake{0%{transform:rotate(-14deg)}50%{transform:rotate(14deg)}100%{transform:rotate(-14deg)}}
+.turninfo{flex:1;min-width:0}
+.turninfo .who{font-size:18px;font-weight:900;line-height:1.2}
+.turninfo .hint{font-size:13px;color:var(--muted);font-weight:700;margin-top:2px}
+.timer{width:54px;height:54px;flex:none;position:relative}
+.timer svg{width:54px;height:54px;transform:rotate(-90deg)}
+.timer b{position:absolute;inset:0;display:grid;place-items:center;font-size:17px;font-variant-numeric:tabular-nums}
+.log{margin-top:10px;font-size:14px;background:#f2f5f8;border-radius:10px;padding:8px 10px;min-height:38px}
+
+.players{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.players li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;font-size:15px}
+.players li.now{background:#fff1c2}
+.dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);flex:none}
+.players .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.players .pos{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
+.online{width:8px;height:8px;border-radius:50%;background:#b9c2cb;flex:none}
+.online.on{background:var(--ok)}
+.cardtitle{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+
+.chat{display:flex;flex-direction:column;gap:8px}
+.msgs{height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:2px}
+.msg{font-size:15px;line-height:1.35;max-width:90%;padding:6px 10px;border-radius:12px;background:#f2f5f8;align-self:flex-start;overflow-wrap:anywhere}
+.msg.me{align-self:flex-end;background:#dcefff}
+.msg .from{display:block;font-size:12px;font-weight:900}
+.msg.sys{align-self:center;background:transparent;color:var(--muted);font-size:13px;padding:0}
+.quick{display:flex;gap:6px;flex-wrap:wrap}
+.chatform{display:flex;gap:6px}
+input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px solid var(--line);border-radius:12px;padding:9px 12px;min-width:0;flex:1;background:#fff;color:var(--ink)}
+
+.overlay{position:fixed;inset:0;background:rgba(31,42,55,.55);display:grid;place-items:center;z-index:20;
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.modal{background:var(--panel);border:3px solid var(--line);border-radius:18px;padding:20px;width:min(420px,100%);display:grid;gap:12px;box-shadow:0 8px 0 rgba(0,0,0,.25)}
+.modal h2{margin:0;font-size:22px;font-weight:900;text-wrap:balance}
+.modal p{margin:0;color:var(--muted);font-size:15px;line-height:1.4}
+.linkbox{font-size:13px;background:#f2f5f8;border-radius:10px;padding:8px 10px;overflow-wrap:anywhere;user-select:all}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.big{font-size:18px;padding:12px 16px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--line);color:#fff;padding:10px 16px;border-radius:999px;font-size:15px;z-index:30;max-width:calc(100% - 32px);text-align:center}
+.win{font-size:28px;text-align:center}
+@media (prefers-reduced-motion:reduce){.tok,.tok.slide{transition:none}.dice.mine,.dice.rolling svg{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Жыландар <span>мен</span> баспалдақтар</h1>
+    <div class="roomchip" id="roomchip" hidden>Бөлме <b id="roomcode"></b><button class="btn-small btn-red" id="shareBtn" type="button">Шақыру</button></div>
+  </header>
+
+  <div class="boardbox"><svg id="board" viewBox="0 0 1000 1000" role="img" aria-label="Ойын тақтасы"></svg></div>
+
+  <div class="side">
+    <section class="card" aria-live="polite">
+      <div class="turnrow">
+        <button class="dice" id="diceBtn" type="button" aria-label="Сақа лақтыру" disabled><svg viewBox="0 0 60 60" id="diceFace"></svg></button>
+        <div class="turninfo"><div class="who" id="who">Ойынға қосылыңыз</div><div class="hint" id="hint">Атыңызды жазып кіріңіз</div></div>
+        <div class="timer" id="timer" hidden><svg viewBox="0 0 54 54"><circle cx="27" cy="27" r="23" fill="none" stroke="#e3e8ed" stroke-width="6"/><circle id="timerArc" cx="27" cy="27" r="23" fill="none" stroke="#e53935" stroke-width="6" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="0"/></svg><b id="timerNum">20</b></div>
+      </div>
+      <div class="log" id="log">Кім бірінші 100-ге жетеді?</div>
+      <div class="row" id="winRow" hidden style="margin-top:10px"><button class="btn-red big" id="restartBtn" type="button">Қайта бастау</button></div>
+    </section>
+
+    <section class="card">
+      <h3 class="cardtitle">Ойыншылар <button class="btn-small" id="leaveBtn" type="button" hidden>Ойыннан шығу</button></h3>
+      <ul class="players" id="players"><li style="color:var(--muted)">Әзірге ешкім жоқ</li></ul>
+    </section>
+
+    <section class="card chat">
+      <h3 class="cardtitle">Чат</h3>
+      <div class="msgs" id="msgs"><div class="msg sys">Осында бір-біріңізге жаза аласыз</div></div>
+      <div class="quick" id="quick"></div>
+      <form class="chatform" id="chatForm"><input type="text" id="chatInput" maxlength="300" placeholder="Хабарлама..." autocomplete="off"><button class="btn-red" type="submit">Жіберу</button></form>
+    </section>
+  </div>
+</div>
+
+<div class="overlay" id="joinOverlay" hidden>
+  <form class="modal" id="joinForm">
+    <h2>Ойынға қосылу</h2>
+    <p>Атыңызды жазыңыз — басқалар сізді осы атпен көреді.</p>
+    <input type="text" id="nameInput" maxlength="20" placeholder="Мысалы: Әже" autocomplete="given-name" required>
+    <button class="btn-red big" type="submit" id="joinBtn">Ойнау</button>
+    <p style="font-size:13px">Бұл сілтемені жіберсеңіз, кез келген адам кез келген уақытта қосыла алады:</p>
+    <div class="linkbox" id="joinLink"></div>
+    <button type="button" id="copyBtn2">Сілтемені көшіру</button>
+  </form>
+</div>
+
+<script>
+const SUPABASE_URL = "https://hrnviqfuuaikjwulqzkz.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhybnZpcWZ1dWFpa2p3dWxxemt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NjQ4NDMsImV4cCI6MjEwNjU0MDg0M30.8FvrdhFmiFe8aWK3IqRc7TgkLqIaJc1djkBAdwZYhdc";
+const TURN_SEC = 20;
+
+const LADDERS = {1:38,4:14,9:31,21:42,28:84,36:44,51:67,71:91,80:100};
+const SNAKES  = {16:6,47:26,49:11,56:53,62:19,64:60,87:24,93:73,95:75,98:78};
+const PCOLORS = ["#e53935","#43a047","#1e88e5","#fb8c00","#8e24aa","#ec407a","#00897b","#6d4c41"];
+const PCNAMES = ["қызыл","жасыл","көк","сарғыш","күлгін","қызғылт","көгілдір","қоңыр"];
+
+const $ = id => document.getElementById(id);
+const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+
+/* ---------- бөлме коды ---------- */
+const params = new URLSearchParams(location.search);
+let ROOM = (params.get("room")||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
+if (ROOM.length < 4){
+  const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; ROOM = "";
+  for (let i=0;i<5;i++) ROOM += abc[Math.floor(Math.random()*abc.length)];
+  params.set("room", ROOM);
+  history.replaceState(null, "", location.pathname + "?" + params.toString());
+}
+const LINK = location.origin + location.pathname + "?room=" + ROOM;
+$("roomcode").textContent = ROOM; $("roomchip").hidden = false; $("joinLink").textContent = LINK;
+
+let PID = store.get("zhl_pid");
+if (!PID){ PID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)+Date.now()); store.set("zhl_pid", PID); }
+
+/* ---------- тақта ---------- */
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent){ const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function cellRC(n){ const c = Math.floor((n-1)/10), k = (n-1)%10; return {c, r: c%2===0 ? k : 9-k}; }
+function center(n){ const {c,r} = cellRC(n); return {x:c*100+50, y:r*100+50}; }
+const CELLCOL = ["#e53935","#fdd835","#1e88e5","#43a047","#fafafa"];
+
+function drawBoard(){
+  const svg = $("board");
+  const g = el("g", {}, svg);
+  for (let n=1;n<=100;n++){
+    const {c,r} = cellRC(n);
+    const fill = CELLCOL[(c*3 + r*2 + (c%2)) % 5];
+    el("rect",{x:c*100,y:r*100,width:100,height:100,fill,stroke:"#22303c","stroke-width":3},g);
+    const light = fill==="#fafafa" || fill==="#fdd835";
+    const t = el("text",{x:c*100+50,y:r*100+64,"text-anchor":"middle","font-size":n===100?36:42,"font-weight":900,
+      "font-family":"Nunito, sans-serif",fill: light?"#22303c":"#fff","paint-order":"stroke",stroke: light?"none":"rgba(0,0,0,.25)","stroke-width":4},g);
+    t.textContent = n;
+  }
+  const deco = el("g",{}, svg);
+  for (const a in LADDERS) drawLadder(deco, +a, LADDERS[a]);
+  for (const h in SNAKES) drawSnake(deco, +h, SNAKES[h]);
+  el("g",{id:"tokens"}, svg);
+}
+function drawLadder(g, a, b){
+  const p = center(a), q = center(b);
+  const dx=q.x-p.x, dy=q.y-p.y, L=Math.hypot(dx,dy), ux=dx/L, uy=dy/L, nx=-uy*17, ny=ux*17;
+  const lg = el("g",{opacity:.95},g);
+  const rungs = Math.max(3, Math.round(L/42));
+  for (let i=1;i<rungs;i++){ const t=i/rungs, x=p.x+dx*t, y=p.y+dy*t;
+    el("line",{x1:x+nx,y1:y+ny,x2:x-nx,y2:y-ny,stroke:"#22303c","stroke-width":11,"stroke-linecap":"round"},lg);
+    el("line",{x1:x+nx,y1:y+ny,x2:x-nx,y2:y-ny,stroke:"#f6d52b","stroke-width":6,"stroke-linecap":"round"},lg); }
+  for (const s of [1,-1]){
+    const a1={x:p.x+nx*s-ux*12,y:p.y+ny*s-uy*12}, b1={x:q.x+nx*s+ux*12,y:q.y+ny*s+uy*12};
+    el("line",{x1:a1.x,y1:a1.y,x2:b1.x,y2:b1.y,stroke:"#22303c","stroke-width":14,"stroke-linecap":"round"},lg);
+    el("line",{x1:a1.x,y1:a1.y,x2:b1.x,y2:b1.y,stroke:"#f6d52b","stroke-width":8,"stroke-linecap":"round"},lg);
+  }
+}
+function drawSnake(g, head, tail){
+  const p = center(head), q = center(tail);
+  const dx=q.x-p.x, dy=q.y-p.y, L=Math.hypot(dx,dy), nx=-dy/L, ny=dx/L;
+  const waves = Math.max(1.5, L/170), amp = Math.min(34, 14 + L/30);
+  const pts=[]; const N=60;
+  for (let i=0;i<=N;i++){ const t=i/N, s=Math.sin(t*Math.PI*2*waves)*amp*Math.sin(Math.min(1,t*3)*Math.PI/2);
+    pts.push([p.x+dx*t+nx*s, p.y+dy*t+ny*s]); }
+  const d = "M"+pts.map(v=>v[0].toFixed(1)+","+v[1].toFixed(1)).join(" L");
+  const sg = el("g",{},g);
+  el("path",{d,fill:"none",stroke:"#b4527f","stroke-width":24,"stroke-linecap":"round","stroke-linejoin":"round"},sg);
+  el("path",{d,fill:"none",stroke:"#f2a7d8","stroke-width":17,"stroke-linecap":"round","stroke-linejoin":"round"},sg);
+  el("path",{d,fill:"none",stroke:"#b4527f","stroke-width":5,"stroke-dasharray":"2 22","stroke-linecap":"round"},sg);
+  const [hx,hy] = pts[0], [nx2,ny2] = pts[2]; const ang = Math.atan2(hy-ny2, hx-nx2)*180/Math.PI;
+  const hg = el("g",{transform:`translate(${hx},${hy}) rotate(${ang})`},sg);
+  el("ellipse",{cx:4,cy:0,rx:22,ry:17,fill:"#f2a7d8",stroke:"#b4527f","stroke-width":4},hg);
+  for (const s of [-1,1]){ el("circle",{cx:8,cy:7*s,r:6,fill:"#fff",stroke:"#22303c","stroke-width":2},hg); el("circle",{cx:10,cy:7*s,r:2.6,fill:"#22303c"},hg); }
+  el("path",{d:"M25,0 l12,0 l5,-5 M37,0 l5,5",stroke:"#e53935","stroke-width":3,fill:"none","stroke-linecap":"round"},hg);
+}
+drawBoard();
+
+/* ---------- сақа ---------- */
+const PIPS = {1:[[30,30]],2:[[18,18],[42,42]],3:[[16,16],[30,30],[44,44]],4:[[18,18],[42,18],[18,42],[42,42]],5:[[17,17],[43,17],[30,30],[17,43],[43,43]],6:[[18,15],[42,15],[18,30],[42,30],[18,45],[42,45]]};
+function drawDie(n){ const s = $("diceFace"); s.innerHTML = ""; el("rect",{x:3,y:3,width:54,height:54,rx:11,fill:"#fff",stroke:"#22303c","stroke-width":3},s);
+  for (const [x,y] of PIPS[n]) el("circle",{cx:x,cy:y,r:5.6,fill:n===1?"#e53935":"#22303c"},s); }
+drawDie(6);
+
+/* ---------- дыбыс ---------- */
+let AC = null;
+function audio(){ if (!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if (AC && AC.state==="suspended") AC.resume(); return AC; }
+function knock(t, vol, freq){ const ac=AC; const len=0.05; const buf=ac.createBuffer(1, ac.sampleRate*len, ac.sampleRate); const d=buf.getChannelData(0);
+  for (let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,4);
+  const src=ac.createBufferSource(); src.buffer=buf; const f=ac.createBiquadFilter(); f.type="bandpass"; f.frequency.value=freq; f.Q.value=1.4;
+  const g=ac.createGain(); g.gain.value=vol; src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); }
+function diceSound(){ const ac = audio(); if (!ac) return; const now = ac.currentTime;
+  for (let i=0;i<9;i++) knock(now + i*0.06 + Math.random()*0.03, 0.5+Math.random()*0.4, 1800+Math.random()*1800);
+  knock(now+0.62, 1.1, 900); knock(now+0.72, 0.6, 1100); }
+function tone(freqs, dur){ const ac = audio(); if (!ac) return; let t = ac.currentTime;
+  for (const f of freqs){ const o=ac.createOscillator(), g=ac.createGain(); o.type="triangle"; o.frequency.value=f; g.gain.setValueAtTime(0.18,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur); t += dur*0.7; } }
+const sndLadder = () => tone([523,659,784,1047], .16);
+const sndSnake  = () => tone([784,622,494,392,311], .14);
+const sndWin    = () => tone([523,659,784,1047,784,1047], .2);
+
+/* ---------- Supabase ---------- */
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false}});
+let state = null, clockOffset = 0, lastSeq = -1, joined = false, online = new Set();
+const disp = {};             // экрандағы фишка орындары
+let queue = Promise.resolve(), animating = false, rolling = false, skipAskedFor = -1;
+
+function serverNow(){ return Date.now() + clockOffset; }
+async function rpc(fn, args){ const {data, error} = await sb.rpc(fn, args); if (error) throw error; if (data && data.now){ clockOffset = data.now - Date.now(); } return data; }
+function toast(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), 2600); }
+function playerById(id){ return state && state.players.find(p=>p.id===id); }
+function pname(id){ const p = playerById(id); return p ? p.name : "Біреу"; }
+
+function applyState(s){
+  if (!s || !Array.isArray(s.players)) return;
+  queue = queue.then(()=>applyOne(s)).catch(()=>{});
+}
+async function applyOne(s){
+  const seq = s.seq ?? 0;
+  if (seq <= lastSeq && state) return;
+  const first = lastSeq < 0;
+  const prev = state; lastSeq = seq; state = s;
+  const L = s.last;
+  const moved = !first && L && !L.skip && L.pid && (!prev || !prev.last || JSON.stringify(prev.last)!==JSON.stringify(L) || prev.seq !== s.seq) && L.die;
+  for (const p of s.players) if (disp[p.id] === undefined || first) disp[p.id] = p.pos;
+  for (const id in disp) if (!s.players.find(p=>p.id===id)) delete disp[id];
+  if (moved){
+    disp[L.pid] = L.from;
+    animating = true; render();
+    $("diceBtn").classList.add("rolling"); diceSound();
+    for (let i=0;i<6;i++){ drawDie(1+Math.floor(Math.random()*6)); await sleep(100); }
+    $("diceBtn").classList.remove("rolling"); drawDie(L.die);
+    rolling = false;
+    $("log").textContent = `${pname(L.pid)}: ${L.die} түсті`;
+    await sleep(250);
+    for (let p=L.from+1; p<=L.mid; p++){ disp[L.pid]=p; renderTokens(); await sleep(190); }
+    if (L.mid === L.from && L.die) $("log").textContent = `${pname(L.pid)}: ${L.die} түсті — 100-ден асып кетеді, орнында қалады`;
+    if (L.via){
+      await sleep(350);
+      L.via==="ladder" ? sndLadder() : sndSnake();
+      renderTokens(true, L.pid, L.to); disp[L.pid] = L.to;
+      $("log").textContent = L.via==="ladder" ? `${pname(L.pid)}: ${L.die} түсті → баспалдақпен ${L.mid}-ден ${L.to}-ке шықты!` : `${pname(L.pid)}: ${L.die} түсті → жылан ${L.mid}-ден ${L.to}-ке түсірді`;
+      await sleep(700);
+    } else if (L.mid !== L.from) {
+      $("log").textContent = `${pname(L.pid)}: ${L.die} түсті → ${L.to}-шаршы` + (L.die===6 && s.status!=="won" ? ". 6 түсті — тағы бір рет лақтырады!" : "");
+    }
+    if (L.via && L.die===6 && s.status!=="won") $("log").textContent += ". 6 түсті — тағы лақтырады!";
+    animating = false;
+    if (s.status==="won") sndWin();
+  } else if (!first && L && L.skip){
+    $("log").textContent = `${pname(L.pid)} ${TURN_SEC} секундта лақтырмады — кезек келесіге өтті`;
+  }
+  for (const p of s.players) disp[p.id] = p.pos;
+  render();
+}
+const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+/* ---------- сурет салу ---------- */
+function renderTokens(slide, slidePid, slideTo){
+  const layer = $("tokens"); if (!state) return;
+  const byCell = {};
+  for (const p of state.players){ const pos = (slidePid===p.id && slide) ? slideTo : disp[p.id]; if (pos>0) (byCell[pos] = byCell[pos]||[]).push(p.id); }
+  const offs = [[0,0],[-20,-20],[20,20],[20,-20],[-20,20],[0,-26],[0,26],[-26,0]];
+  const keep = new Set();
+  for (const p of state.players){
+    keep.add(p.id);
+    let g = layer.querySelector(`[data-pid="${CSS.escape(p.id)}"]`);
+    if (!g){ g = el("g",{class:"tok","data-pid":p.id},layer);
+      el("circle",{cx:0,cy:6,r:22,fill:"rgba(0,0,0,.3)"},g);
+      el("circle",{cx:0,cy:0,r:22,fill:PCOLORS[p.color%8],stroke:"#fff","stroke-width":5},g);
+      el("circle",{cx:0,cy:0,r:22,fill:"none",stroke:"#22303c","stroke-width":2.5},g);
+      const t = el("text",{x:0,y:8,"text-anchor":"middle","font-size":22,"font-weight":900,fill:"#fff","font-family":"Nunito, sans-serif"},g);
+      t.textContent = (p.name||"?").trim().charAt(0).toUpperCase();
+    }
+    const pos = (slidePid===p.id && slide) ? slideTo : disp[p.id];
+    if (!(pos>0)){ g.setAttribute("visibility","hidden"); continue; }
+    g.setAttribute("visibility","visible");
+    const list = byCell[pos], i = list.indexOf(p.id), n = list.length;
+    const o = n>1 ? offs[(i+1)%offs.length] : [0,0];
+    const c = center(pos);
+    g.classList.toggle("slide", !!(slide && slidePid===p.id));
+    g.style.transform = `translate(${c.x+o[0]}px,${c.y+o[1]}px)`;
+    if (p.id===PID) layer.appendChild(g);
+  }
+  layer.querySelectorAll("g.tok").forEach(g=>{ if (!keep.has(g.dataset.pid)) g.remove(); });
+}
+function render(){
+  renderTokens();
+  const ul = $("players"); ul.innerHTML = "";
+  if (!state || !state.players.length){ const li=document.createElement("li"); li.style.color="var(--muted)"; li.textContent="Әзірге ешкім жоқ"; ul.appendChild(li); }
+  else state.players.forEach((p,i)=>{
+    const li = document.createElement("li"); if (i===state.turn && state.status==="playing") li.className="now";
+    const on = document.createElement("span"); on.className = "online" + (online.has(p.id)?" on":""); on.title = online.has(p.id)?"Желіде":"Желіде емес";
+    const dot = document.createElement("span"); dot.className="dot"; dot.style.background = PCOLORS[p.color%8];
+    const nm = document.createElement("span"); nm.className="nm"; nm.textContent = p.name + (p.id===PID?" (сіз)":"");
+    const pos = document.createElement("span"); pos.className="pos"; pos.textContent = disp[p.id]>0 ? disp[p.id]+"-шаршы" : "старт";
+    li.append(on,dot,nm,pos); ul.appendChild(li);
+  });
+  $("leaveBtn").hidden = !joined;
+  const me = playerById(PID); joined = !!me;
+  const cur = state && state.players[state.turn];
+  const myTurn = !!(cur && cur.id===PID && state.status==="playing");
+  const dice = $("diceBtn");
+  dice.disabled = !myTurn || animating || rolling;
+  dice.classList.toggle("mine", myTurn && !animating && !rolling);
+  $("winRow").hidden = !(state && state.status==="won" && joined);
+  if (!state || !state.players.length){ $("who").textContent = "Ойынға қосылыңыз"; $("hint").textContent = "Атыңызды жазып кіріңіз"; $("timer").hidden = true; return; }
+  if (state.status==="won"){
+    $("who").textContent = `🏆 ${pname(state.winner)} жеңді!`; $("hint").textContent = "Қайта бастау батырмасын басыңыз"; $("timer").hidden = true;
+    if (!animating) $("log").innerHTML = "", $("log").append(Object.assign(document.createElement("div"),{className:"win",textContent:`${pname(state.winner)} 100-ге жетті!`}));
+    return;
+  }
+  $("timer").hidden = false;
+  if (myTurn){ $("who").textContent = "Сіздің кезегіңіз!"; $("hint").textContent = "Сақаны басып лақтырыңыз"; }
+  else { $("who").textContent = `${cur.name} лақтырады`; $("hint").textContent = `${PCNAMES[cur.color%8]} фишка` + (joined?"":" · қосылу үшін атыңызды жазыңыз"); }
+}
+function tick(){
+  if (state && state.status==="playing" && state.players.length && !animating){
+    const left = Math.max(0, TURN_SEC - (serverNow() - state.turnStarted)/1000);
+    $("timerNum").textContent = Math.ceil(left);
+    $("timerArc").setAttribute("stroke-dashoffset", (144.5*(1-left/TURN_SEC)).toFixed(1));
+    if (left <= 0 && skipAskedFor !== state.seq){ skipAskedFor = state.seq;
+      rpc("zhl_skip",{p_code:ROOM}).then(d=>applyState(d.state)).catch(()=>{ skipAskedFor = -1; }); }
+  }
+}
+setInterval(tick, 250);
+
+/* ---------- әрекеттер ---------- */
+$("diceBtn").addEventListener("click", async ()=>{
+  audio(); rolling = true; render(); $("diceBtn").classList.add("rolling"); diceSound();
+  try{ const d = await rpc("zhl_roll",{p_code:ROOM,p_pid:PID}); applyState(d.state); }
+  catch(e){ rolling=false; $("diceBtn").classList.remove("rolling"); toast("Байланыс үзілді, қайта басыңыз"); render(); }
+  setTimeout(()=>{ if (rolling && !animating){ rolling=false; $("diceBtn").classList.remove("rolling"); render(); } }, 4000);
+});
+$("joinForm").addEventListener("submit", async e=>{
+  e.preventDefault(); audio();
+  const name = $("nameInput").value.trim(); if (!name) return;
+  $("joinBtn").disabled = true;
+  try{ const d = await rpc("zhl_join",{p_code:ROOM,p_pid:PID,p_name:name}); store.set("zhl_name", name);
+    $("joinOverlay").hidden = true; applyState(d.state); track(); }
+  catch(err){ toast(String(err.message||"").includes("full") ? "Бөлме толы (8 адам)" : "Қосыла алмадық, интернетті тексеріңіз"); }
+  $("joinBtn").disabled = false;
+});
+$("leaveBtn").addEventListener("click", async ()=>{
+  if ($("leaveBtn").dataset.confirm !== "1"){ $("leaveBtn").dataset.confirm="1"; $("leaveBtn").textContent="Иә, шығамын"; setTimeout(()=>{ $("leaveBtn").dataset.confirm=""; $("leaveBtn").textContent="Ойыннан шығу"; }, 3000); return; }
+  try{ const d = await rpc("zhl_leave",{p_code:ROOM,p_pid:PID}); joined=false; applyState(d.state); $("joinOverlay").hidden=false; }catch(e){ toast("Шыға алмадық"); }
+});
+$("restartBtn").addEventListener("click", async ()=>{ try{ const d = await rpc("zhl_restart",{p_code:ROOM,p_pid:PID}); $("log").textContent="Жаңа ойын басталды!"; applyState(d.state);}catch(e){ toast("Қайта бастау сәтсіз"); } });
+
+async function copyLink(){
+  if (navigator.share){ try{ await navigator.share({title:"Жыландар мен баспалдақтар", text:"Бірге ойнайық! Мына сілтемеге кіріп, атыңды жаз:", url:LINK}); return; }catch(e){ if (e.name==="AbortError") return; } }
+  try{ await navigator.clipboard.writeText(LINK); toast("Сілтеме көшірілді — WhatsApp-қа салыңыз"); }
+  catch(e){ toast(LINK); }
+}
+$("shareBtn").addEventListener("click", copyLink);
+$("copyBtn2").addEventListener("click", copyLink);
+
+/* ---------- чат ---------- */
+const QUICK = ["👏 Жарайсың!","😂","Кезегің!","Ой, жылан!","🐍","🪜","Сәлем!"];
+for (const q of QUICK){ const b=document.createElement("button"); b.type="button"; b.className="btn-small"; b.textContent=q; b.onclick=()=>say(q); $("quick").appendChild(b); }
+const seenMsg = new Set();
+function addMsg(m){
+  if (seenMsg.has(m.id)) return; seenMsg.add(m.id);
+  const box = $("msgs"); const d = document.createElement("div"); d.className = "msg" + (m.pid===PID?" me":"");
+  const f = document.createElement("span"); f.className="from"; f.textContent = m.name;
+  const p = playerById(m.pid); if (p) f.style.color = PCOLORS[p.color%8];
+  d.append(f, document.createTextNode(m.body)); box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+async function say(text){
+  text = (text||"").trim(); if (!text) return;
+  if (!joined){ toast("Алдымен ойынға қосылыңыз"); $("joinOverlay").hidden=false; return; }
+  try{ const {error} = await sb.rpc("zhl_say",{p_code:ROOM,p_pid:PID,p_body:text}); if (error) throw error; }catch(e){ toast("Хабарлама жіберілмеді"); }
+}
+$("chatForm").addEventListener("submit", e=>{ e.preventDefault(); const v=$("chatInput").value; $("chatInput").value=""; say(v); });
+
+/* ---------- нақты уақыт ---------- */
+const ch = sb.channel("zhl:"+ROOM, {config:{presence:{key:PID}}});
+ch.on("postgres_changes",{event:"*",schema:"public",table:"zhl_rooms",filter:"code=eq."+ROOM}, pl=>{ if (pl.new && pl.new.state) applyState(pl.new.state); })
+  .on("postgres_changes",{event:"INSERT",schema:"public",table:"zhl_chat",filter:"room=eq."+ROOM}, pl=>addMsg(pl.new))
+  .on("presence",{event:"sync"}, ()=>{ online = new Set(Object.keys(ch.presenceState())); render(); })
+  .subscribe(st=>{ if (st==="SUBSCRIBED"){ track(); refresh(); } });
+function track(){ if (joined || store.get("zhl_name")) ch.track({at:Date.now()}).catch(()=>{}); }
+
+async function refresh(){
+  const {data} = await sb.from("zhl_rooms").select("state").eq("code",ROOM).maybeSingle();
+  if (data && data.state) applyState(data.state);
+}
+async function boot(){
+  try{ clockOffset = (await sb.rpc("zhl_now")).data - Date.now() || 0; }catch(e){}
+  await refresh();
+  const {data:msgs} = await sb.from("zhl_chat").select("*").eq("room",ROOM).order("id",{ascending:false}).limit(50);
+  (msgs||[]).reverse().forEach(addMsg);
+  await queue;
+  const savedName = store.get("zhl_name");
+  if (!playerById(PID)){
+    if (savedName) $("nameInput").value = savedName;
+    $("joinOverlay").hidden = false; setTimeout(()=>$("nameInput").focus(), 50);
+  } else { joined = true; render(); track(); }
+}
+setInterval(refresh, 6000);
+document.addEventListener("visibilitychange", ()=>{ if (!document.hidden) refresh(); });
+boot();
+</script>
+</body>
+</html>
