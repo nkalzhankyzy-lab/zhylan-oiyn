@@ -46,11 +46,19 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .btn-small{padding:5px 10px;font-size:13px;border-radius:999px}
 
 .boardbox{background:var(--panel);border:3px solid var(--line);border-radius:6px;padding:6px;box-shadow:0 6px 0 rgba(31,42,55,.18)}
-#board{display:block;width:100%;height:auto;max-width:100%;aspect-ratio:1/1}
+#board{overflow:visible;display:block;width:100%;height:auto;max-width:100%;aspect-ratio:1/1}
 .tok{transition:transform .17s ease-out}
 .tok.slide{transition:transform .65s cubic-bezier(.45,.05,.3,1)}
+.tok .lifter{transition:transform .22s ease-out;transform-origin:0px 30px}
+.tok.up .lifter{transform:translateY(-18px) scale(1.25)}
+.tok .shadow{transition:transform .22s ease-out,opacity .22s;transform-origin:0px 32px}
+.tok.up .shadow{transform:scale(.75);opacity:.45}
+.tok.mine{cursor:pointer}
+.players .dot.photo{width:28px;height:28px;background-size:cover;background-position:center}
+.photobtn{padding:3px 8px;font-size:12px;border-radius:999px}
 
-.side{display:grid;gap:12px;min-width:0}
+.side{display:grid;gap:12px;min-width:0;grid-template-columns:minmax(0,1fr)}
+.players .pos{white-space:nowrap}
 .card{background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:12px}
 .turnrow{display:flex;align-items:center;gap:12px}
 .dice{width:76px;height:76px;flex:none;border-radius:16px;border:3px solid var(--line);background:#fff;display:grid;place-items:center;padding:0;box-shadow:0 5px 0 var(--line);transition:transform .08s}
@@ -105,7 +113,7 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
   box-shadow:0 6px 0 rgba(0,0,0,.2);width:min(460px,calc(100% - 32px));font-size:15px}
 .banner span{flex:1;min-width:160px}
 .modal .robot{font-size:46px;text-align:center;line-height:1}
-@media (prefers-reduced-motion:reduce){.tok,.tok.slide{transition:none}.dice.mine,.dice.rolling svg{animation:none}}
+@media (prefers-reduced-motion:reduce){.tok,.tok.slide,.tok .lifter,.tok .shadow{transition:none}.dice.mine,.dice.rolling svg{animation:none}}
 </style>
 </head>
 <body>
@@ -154,6 +162,7 @@ input[type=text]{font-family:inherit;font-weight:700;font-size:16px;border:2px s
   </form>
 </div>
 
+<input type="file" id="photoInput" accept="image/*" hidden>
 <div class="overlay" id="aloneOverlay" hidden>
   <div class="modal">
     <div class="robot">🤖</div>
@@ -306,8 +315,9 @@ async function applyOne(s){
     $("diceBtn").classList.remove("rolling"); drawDie(L.die);
     rolling = false;
     $("log").textContent = `${pname(L.pid)}: ${L.die} түсті`;
+    setLift(L.pid, true);
     await sleep(250);
-    for (let p=L.from+1; p<=L.mid; p++){ disp[L.pid]=p; renderTokens(); await sleep(190); }
+    for (let p=L.from+1; p<=L.mid; p++){ disp[L.pid]=p; renderTokens(); await sleep(230); }
     if (L.mid === L.from && L.die) $("log").textContent = `${pname(L.pid)}: ${L.die} түсті — 100-ден асып кетеді, орнында қалады`;
     if (L.via){
       await sleep(350);
@@ -319,6 +329,7 @@ async function applyOne(s){
       $("log").textContent = `${pname(L.pid)}: ${L.die} түсті → ${L.to}-шаршы` + (L.die===6 && s.status!=="won" ? ". 6 түсті — тағы бір рет лақтырады!" : "");
     }
     if (L.via && L.die===6 && s.status!=="won") $("log").textContent += ". 6 түсті — тағы лақтырады!";
+    setLift(L.pid, false);
     animating = false;
     if (s.status==="won") sndWin();
   } else if (!first && L && L.skip){
@@ -334,30 +345,76 @@ function renderTokens(slide, slidePid, slideTo){
   const layer = $("tokens"); if (!state) return;
   const byCell = {};
   for (const p of state.players){ const pos = (slidePid===p.id && slide) ? slideTo : disp[p.id]; if (pos>0) (byCell[pos] = byCell[pos]||[]).push(p.id); }
-  const offs = [[0,0],[-20,-20],[20,20],[20,-20],[-20,20],[0,-26],[0,26],[-26,0]];
+  const offs = [[-20,6],[20,6],[0,-12],[-24,-16],[24,-16],[0,22],[-28,24],[28,24]];
   const keep = new Set();
   for (const p of state.players){
     keep.add(p.id);
     let g = layer.querySelector(`[data-pid="${CSS.escape(p.id)}"]`);
-    if (!g){ g = el("g",{class:"tok","data-pid":p.id},layer);
-      el("circle",{cx:0,cy:6,r:22,fill:"rgba(0,0,0,.3)"},g);
-      el("circle",{cx:0,cy:0,r:22,fill:PCOLORS[p.color%8],stroke:"#fff","stroke-width":5},g);
-      el("circle",{cx:0,cy:0,r:22,fill:"none",stroke:"#22303c","stroke-width":2.5},g);
-      const t = el("text",{x:0,y:8,"text-anchor":"middle","font-size":22,"font-weight":900,fill:"#fff","font-family":"Nunito, sans-serif"},g);
-      t.textContent = p.bot ? "🤖" : (p.name||"?").trim().charAt(0).toUpperCase();
-    }
+    if (!g){ g = el("g",{class:"tok","data-pid":p.id},layer); }
+    const ph = photos[p.id] || "";
+    const sig = p.name + "|" + p.color + "|" + (p.bot?1:0) + "|" + ph.length + ph.slice(-32);
+    if (g.dataset.sig !== sig){ g.dataset.sig = sig; buildPawn(g, p, ph); }
+    g.classList.toggle("mine", p.id===PID);
     const pos = (slidePid===p.id && slide) ? slideTo : disp[p.id];
     if (!(pos>0)){ g.setAttribute("visibility","hidden"); continue; }
     g.setAttribute("visibility","visible");
     const list = byCell[pos], i = list.indexOf(p.id), n = list.length;
-    const o = n>1 ? offs[(i+1)%offs.length] : [0,0];
+    const o = n>1 ? offs[i%offs.length] : [0,0];
+    const sc = n>1 ? 1.0 : 1.35;
     const c = center(pos);
     g.classList.toggle("slide", !!(slide && slidePid===p.id));
-    g.style.transform = `translate(${c.x+o[0]}px,${c.y+o[1]}px)`;
-    if (p.id===PID) layer.appendChild(g);
+    g.style.transform = `translate(${c.x+o[0]}px,${c.y+o[1]+4}px) scale(${sc})`;
+    const lbl = g.querySelector(".lbl"); if (lbl) lbl.setAttribute("transform", n>1 ? `translate(0,${-24*i})` : "");
   }
+  // қозғалып жатқан және өз фишкаңыз үстінде тұрсын
+  const top = layer.querySelector(".tok.up") || layer.querySelector(`[data-pid="${CSS.escape(PID)}"]`);
+  if (top && layer.lastChild !== top) layer.appendChild(top);
   layer.querySelectorAll("g.tok").forEach(g=>{ if (!keep.has(g.dataset.pid)) g.remove(); });
 }
+/* нағыз пластик фишка: табаны, денесі, басы (немесе фотосы) және үстінде аты */
+let clipN = 0;
+function shade(hex, f){ const n = parseInt(hex.slice(1),16); let r=n>>16, g=(n>>8)&255, b=n&255;
+  const m = v => Math.max(0, Math.min(255, Math.round(f>0 ? v+(255-v)*f : v*(1+f))));
+  return "#" + [m(r),m(g),m(b)].map(v=>v.toString(16).padStart(2,"0")).join(""); }
+function buildPawn(g, p, ph){
+  while (g.firstChild) g.removeChild(g.firstChild);
+  const col = PCOLORS[p.color%8], dark = shade(col,-.35), light = shade(col,.55);
+  el("ellipse",{class:"shadow",cx:2,cy:32,rx:24,ry:8,fill:"rgba(0,0,0,.35)"},g);
+  const L = el("g",{class:"lifter"},g);
+  // табаны
+  el("ellipse",{cx:0,cy:27,rx:23,ry:8,fill:dark},L);
+  el("path",{d:"M-23,22 L-23,27 A23,8 0 0 0 23,27 L23,22 Z",fill:dark},L);
+  el("ellipse",{cx:0,cy:22,rx:23,ry:8,fill:col,stroke:dark,"stroke-width":1.5},L);
+  // денесі
+  el("path",{d:"M-17,22 C-15,8 -9,0 -7,-6 L7,-6 C9,0 15,8 17,22 Z",fill:col,stroke:dark,"stroke-width":1.5},L);
+  el("path",{d:"M-12,20 C-11,9 -7,2 -5,-5 L-1,-5 C-3,3 -6,10 -6,20 Z",fill:light,opacity:.55},L);
+  // мойны
+  el("ellipse",{cx:0,cy:-6,rx:12,ry:4.5,fill:col,stroke:dark,"stroke-width":1.5},L);
+  if (ph){
+    const id = "pc" + (++clipN);
+    const cp = el("clipPath",{id},L); el("circle",{cx:0,cy:-26,r:19},cp);
+    el("circle",{cx:0,cy:-26,r:22,fill:"#fff",stroke:dark,"stroke-width":2},L);
+    const im = el("image",{x:-19,y:-45,width:38,height:38,"clip-path":`url(#${id})`,preserveAspectRatio:"xMidYMid slice"},L);
+    im.setAttribute("href", ph);
+    el("circle",{cx:0,cy:-26,r:20,fill:"none",stroke:col,"stroke-width":4},L);
+  } else {
+    el("circle",{cx:0,cy:-22,r:16,fill:col,stroke:dark,"stroke-width":1.5},L);
+    el("circle",{cx:-5,cy:-28,r:6,fill:"#fff",opacity:.55},L);
+    if (p.bot){ const t = el("text",{x:0,y:-15,"text-anchor":"middle","font-size":18},L); t.textContent = "🤖"; }
+  }
+  // аты
+  const nm = (p.bot ? "Компьютер" : (p.name||"?")).trim();
+  const short = nm.length > 9 ? nm.slice(0,8) + "…" : nm;
+  const lg = el("g",{class:"lbl"},L);
+  const bg = el("rect",{x:-30,y:(ph?-70:-62),width:60,height:20,rx:10,fill:"#fff",stroke:col,"stroke-width":3},lg);
+  const t = el("text",{x:0,y:(ph?-55:-47),"text-anchor":"middle","font-size":16,"font-weight":900,fill:"#22303c","font-family":"Nunito, sans-serif"},lg);
+  t.textContent = short;
+  try{ const w = Math.max(30, t.getComputedTextLength() + 16); bg.setAttribute("x", -w/2); bg.setAttribute("width", w); }catch(e){}
+  g.onclick = p.id===PID ? pickPhoto : null;
+  if (p.id===PID){ const tt = el("title",{},g); tt.textContent = "Басып, өз фотоңызды қойыңыз"; }
+}
+function setLift(pid, on){ const g = $("tokens").querySelector(`[data-pid="${CSS.escape(pid)}"]`); if (g){ g.classList.toggle("up", on); if (on) $("tokens").appendChild(g); } }
+
 function render(){
   renderTokens();
   const ul = $("players"); ul.innerHTML = "";
@@ -366,10 +423,12 @@ function render(){
     const li = document.createElement("li"); if (i===state.turn && state.status==="playing") li.className="now";
     const isOn = p.bot || online.has(p.id);
     const on = document.createElement("span"); on.className = "online" + (isOn?" on":""); on.title = isOn?"Желіде":"Желіде емес";
-    const dot = document.createElement("span"); dot.className="dot"; dot.style.background = PCOLORS[p.color%8];
+    const dot = document.createElement("span"); dot.className="dot"; dot.style.backgroundColor = PCOLORS[p.color%8];
+    if (photos[p.id]){ dot.classList.add("photo"); dot.style.backgroundImage = `url("${photos[p.id]}")`; dot.style.borderColor = PCOLORS[p.color%8]; dot.style.borderWidth = "3px"; }
     const nm = document.createElement("span"); nm.className="nm"; nm.textContent = (p.bot?"🤖 ":"") + p.name + (p.id===PID?" (сіз)":"");
     const pos = document.createElement("span"); pos.className="pos"; pos.textContent = disp[p.id]>0 ? disp[p.id]+"-шаршы" : "старт";
     li.append(on,dot,nm,pos);
+    if (p.id===PID){ const b = document.createElement("button"); b.type="button"; b.className="photobtn"; b.textContent = photos[p.id] ? "📷 Ауыстыру" : "📷 Фото"; b.title="Фишкаңызға өз фотоңызды қойыңыз"; b.onclick = pickPhoto; li.appendChild(b); }
     if (p.bot && joined){ const x = document.createElement("button"); x.type="button"; x.className="botx"; x.textContent="✕ Шығару"; x.title="Компьютерді ойыннан шығару"; x.onclick = kickBot; li.appendChild(x); }
     ul.appendChild(li);
   });
@@ -445,6 +504,26 @@ $("leaveBtn").addEventListener("click", async ()=>{
 });
 $("restartBtn").addEventListener("click", async ()=>{ try{ const d = await rpc("zhl_restart",{p_code:ROOM,p_pid:PID}); $("log").textContent="Жаңа ойын басталды!"; applyState(d.state);}catch(e){ toast("Қайта бастау сәтсіз"); } });
 
+/* ---------- фото ---------- */
+const photos = {};
+function pickPhoto(){ if (!joined){ toast("Алдымен ойынға қосылыңыз"); return; } $("photoInput").value = ""; $("photoInput").click(); }
+$("photoInput").addEventListener("change", async ()=>{
+  const f = $("photoInput").files && $("photoInput").files[0]; if (!f) return;
+  try{
+    const url = URL.createObjectURL(f);
+    const img = await new Promise((res, rej)=>{ const i = new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+    const S = 128, cv = document.createElement("canvas"); cv.width = S; cv.height = S;
+    const ctx = cv.getContext("2d"), m = Math.min(img.naturalWidth, img.naturalHeight);
+    ctx.fillStyle = "#fff"; ctx.fillRect(0,0,S,S);
+    ctx.drawImage(img, (img.naturalWidth-m)/2, (img.naturalHeight-m)/2*0.7, m, m, 0, 0, S, S);
+    URL.revokeObjectURL(url);
+    let data = cv.toDataURL("image/jpeg", 0.82);
+    if (data.length > 58000) data = cv.toDataURL("image/jpeg", 0.6);
+    const {error} = await sb.rpc("zhl_set_photo",{p_code:ROOM,p_pid:PID,p_img:data}); if (error) throw error;
+    photos[PID] = data; render(); toast("Фото қойылды! Енді фишкаңыз сіздің бетіңізбен жүреді");
+  }catch(e){ toast("Бұл суретті аша алмадық. Басқа фото таңдап көріңіз"); }
+});
+
 async function addBot(){
   $("aloneOverlay").hidden = true; aloneDismissed = true;
   const absent = state ? state.players.filter(p=>!p.bot && p.id!==PID && !online.has(p.id)).map(p=>p.id) : [];
@@ -500,6 +579,7 @@ $("chatForm").addEventListener("submit", e=>{ e.preventDefault(); const v=$("cha
 const ch = sb.channel("zhl:"+ROOM, {config:{presence:{key:PID}}});
 ch.on("postgres_changes",{event:"*",schema:"public",table:"zhl_rooms",filter:"code=eq."+ROOM}, pl=>{ if (pl.new && pl.new.state) applyState(pl.new.state); })
   .on("postgres_changes",{event:"INSERT",schema:"public",table:"zhl_chat",filter:"room=eq."+ROOM}, pl=>addMsg(pl.new))
+  .on("postgres_changes",{event:"*",schema:"public",table:"zhl_avatars",filter:"room=eq."+ROOM}, pl=>{ if (pl.new && pl.new.pid){ photos[pl.new.pid] = pl.new.img; if (!animating) render(); } })
   .on("presence",{event:"sync"}, ()=>{ online = new Set(Object.keys(ch.presenceState())); setTimeout(()=>{ presenceSynced = true; }, 1500); if (!animating) render(); })
   .subscribe(st=>{ if (st==="SUBSCRIBED"){ track(); refresh(); } });
 function track(){ if (joined || store.get("zhl_name")) ch.track({at:Date.now()}).catch(()=>{}); }
@@ -508,8 +588,15 @@ async function refresh(){
   const {data} = await sb.from("zhl_rooms").select("state").eq("code",ROOM).maybeSingle();
   if (data && data.state) applyState(data.state);
 }
+async function loadPhotos(){
+  try{ const {data} = await sb.from("zhl_avatars").select("pid,img").eq("room",ROOM);
+    let changed = false; for (const r of (data||[])) if (photos[r.pid] !== r.img){ photos[r.pid] = r.img; changed = true; }
+    if (changed && !animating) render(); }catch(e){}
+}
+setInterval(loadPhotos, 30000);
 async function boot(){
   try{ clockOffset = (await sb.rpc("zhl_now")).data - Date.now() || 0; }catch(e){}
+  await loadPhotos();
   await refresh();
   const {data:msgs} = await sb.from("zhl_chat").select("*").eq("room",ROOM).order("id",{ascending:false}).limit(50);
   (msgs||[]).reverse().forEach(addMsg);
